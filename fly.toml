@@ -28,6 +28,13 @@ primary_region = "sin"
     soft_limit = 20
     hard_limit = 40
 
+# Runs and their receipts live in SQLite. Without a volume they vanish whenever
+# the machine restarts, which silently breaks every link to a finished run —
+# including the one the demo video points at.
+[mounts]
+  source = "verbatim_data"
+  destination = "/app/var"
+
 [[vm]]
   size = "shared-cpu-2x"
   memory = "2gb"

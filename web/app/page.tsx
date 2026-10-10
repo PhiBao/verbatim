@@ -136,6 +136,19 @@ export default function Home() {
     if (poll.current) window.clearInterval(poll.current);
   }, []);
 
+  // `?run=<id>` opens a finished run directly.
+  //
+  // A verified run takes about ninety seconds, which cannot be recorded inside a
+  // twenty-second demo scene. Deep-linking lets the video show the real receipts
+  // page for a real run instead of an empty form. It also means a judge can be
+  // handed a link to a specific run rather than being told to wait.
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("run");
+    if (!id) return;
+    setRun({ runId: id, status: "running", error: null, mode: "verified" });
+    void load(id);
+  }, [load]);
+
   // The one moment that matters: a claim that flips to CONTRADICTED.
   useEffect(() => {
     if (!artifact) return;
