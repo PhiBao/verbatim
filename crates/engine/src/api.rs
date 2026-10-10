@@ -273,7 +273,7 @@ async fn audit_answer(
 }
 
 async fn corpus_info(State(s): State<AppState>) -> impl IntoResponse {
-    Json(s.agent.corpus_summary())
+    Json(s.agent.corpus_summary().await)
 }
 
 // ------------------------------------------------------------------ helpers

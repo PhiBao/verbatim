@@ -92,10 +92,30 @@ each with its fetch-time SHA-256, so a recorded run replays byte-for-byte:
 - `https://www.anthropic.com/pricing` (1.24 MB)
 - `https://docs.anthropic.com/en/docs/about-claude/models/overview` (352 kB)
 
+**Frontend (completed)**
+Next.js reading surface: the answer set as a document in a serif, with the
+evidence in a sticky margin. Receipts show the quote, the source, the byte span,
+the SHA-256 and the score. `Next` proxies `/api/*` to the engine so there is one
+origin. Deliberately not a dashboard: hairline rules, semantic colour only, and
+exactly one piece of meaningful motion — a claim that flips to CONTRADICTED
+strikes through. `prefers-reduced-motion` and `prefers-color-scheme: dark`
+handled.
+
+**Audit mode (completed, working live)**
+`POST /api/audit` takes an answer and the sources it cites, and reports per
+sentence which distinctive facts appear in no source we read. Verified against
+the live pinned corpus: *"Claude Sonnet has a 900,000 token context window"* →
+`unsupported`, missing `["900,000"]`. This is the ten-second demo: Verbatim does
+not compete with deep-research tools, it checks them.
+
 **Verified end-to-end on real sources** — `verbatim verify` against the pinned
 Anthropic rate-limits page:
 - paraphrased quote → `unsupported`, `next_action: re_retrieve`
 - verbatim quote → `supported`, score 1.0, byte-exact span `6549..6717`
+
+**Bug fixed:** `corpus_summary` called `blocking_lock()` on the retrieval mutex
+from inside a tokio handler, which panics. Found by running the server, not by a
+test — the handler is now async. Logged because the test did not catch it.
 
 ## Limitations (current)
 - No retrieval or LLM calls yet; the verifier is exercised by unit tests only.

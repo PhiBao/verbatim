@@ -81,16 +81,14 @@ pub struct RunResult {
 impl Agent {
     pub fn new(cfg: Config, llm: Arc<dyn Llm>) -> Result<Self> {
         let store = Store::open(&cfg.db_path)?;
-        let mode = match cfg.retrieval_mode.as_str() {
-            "live" => RetrievalMode::Live,
-            _ => RetrievalMode::Corpus,
-        };
+        let corpus_dir = cfg.corpus_dir.clone();
+        let retrieval_mode = cfg.retrieval_mode.clone();
         Ok(Self {
             cfg,
             store,
             tracer: Tracer::from_env(),
             llm,
-            retrieval: Mutex::new(Retrieval::new(mode, "./corpus")),
+            retrieval: Mutex::new(Retrieval::new(mode_of(&retrieval_mode), &corpus_dir)),
             cancelled: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -199,7 +197,7 @@ impl Agent {
             .and_then(|e| e.body.get("question").cloned())
             .and_then(|v| v.as_str().map(str::to_string))
             .context("run has no question")?;
-        let mode = mode_of(&events);
+        let mode = mode_of_events(&events);
 
         let mut root = Span::workflow("verbatim.run").with_input(json!({ "question": question }));
         let mut cost = 0.0f64;
@@ -750,7 +748,9 @@ impl Agent {
             }
             stats.claims_checked += 1;
 
-            // Which source, if any, carries the most of this sentence's facts?
+            // Which source carries the most of this sentence's facts, and where
+            // is the most *distinctive* one, so the receipt highlights something
+            // meaningful rather than a two-letter acronym.
             let mut best: Option<(usize, usize, Option<crate::text::Span>)> = None;
             for (i, s) in sources.iter().enumerate() {
                 if s.dead {
@@ -758,12 +758,14 @@ impl Agent {
                 }
                 let c = canonical(&s.text);
                 let mut hits = 0usize;
-                let mut first_span = None;
+                let mut best_span: Option<crate::text::Span> = None;
+                let mut best_distinctive = 0usize;
                 for f in &facts {
                     if let Some(sp) = c.find(&f.canon) {
                         hits += 1;
-                        if first_span.is_none() {
-                            first_span = Some(sp);
+                        if f.raw.len() > best_distinctive {
+                            best_distinctive = f.raw.len();
+                            best_span = Some(sp);
                         }
                     }
                 }
@@ -771,7 +773,7 @@ impl Agent {
                     continue;
                 }
                 if best.map(|(h, _, _)| hits > h).unwrap_or(true) {
-                    best = Some((hits, i, first_span));
+                    best = Some((hits, i, best_span));
                 }
             }
 
@@ -807,13 +809,16 @@ impl Agent {
     }
 
     /// What the pinned corpus contains, for the UI and for honesty.
-    pub fn corpus_summary(&self) -> serde_json::Value {
-        let mode = self.retrieval_mode_of_str();
-        let r = self.retrieval.blocking_lock();
+    ///
+    /// Async because it takes the retrieval lock: `blocking_lock` panics inside
+    /// a tokio runtime, which is exactly how this bug was found.
+    pub async fn corpus_summary(&self) -> serde_json::Value {
+        let r = self.retrieval.lock().await;
         serde_json::json!({
-            "mode": mode,
+            "mode": self.retrieval_mode_of_str(),
             "documents": r.corpus_len(),
             "snapshotted_at": r.corpus_snapshot_time(),
+            "corpus_dir": r.corpus_dir().display().to_string(),
         })
     }
 
@@ -1042,7 +1047,14 @@ fn source_url(sources: &[Source], id: Uuid) -> String {
         .unwrap_or_default()
 }
 
-fn mode_of(events: &[Event]) -> Mode {
+fn mode_of(s: &str) -> RetrievalMode {
+    match s {
+        "live" => RetrievalMode::Live,
+        _ => RetrievalMode::Corpus,
+    }
+}
+
+fn mode_of_events(events: &[Event]) -> Mode {
     match events
         .iter()
         .find(|e| e.kind == "run.started")
