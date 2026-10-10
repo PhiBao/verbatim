@@ -7,6 +7,7 @@
 //! Rule: if we didn't fetch it, we didn't say it.
 
 pub mod agent;
+pub mod api;
 pub mod config;
 pub mod llm;
 pub mod model;

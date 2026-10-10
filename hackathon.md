@@ -85,6 +85,18 @@
 - `extract_title` returned raw entities; it now decodes them, because the title
   is read by a human.
 
+**Pinned corpus (completed)**
+Three documents fetched live during the hackathon into `corpus/corpus.json`,
+each with its fetch-time SHA-256, so a recorded run replays byte-for-byte:
+- `https://docs.anthropic.com/en/api/rate-limits` (545 kB)
+- `https://www.anthropic.com/pricing` (1.24 MB)
+- `https://docs.anthropic.com/en/docs/about-claude/models/overview` (352 kB)
+
+**Verified end-to-end on real sources** — `verbatim verify` against the pinned
+Anthropic rate-limits page:
+- paraphrased quote → `unsupported`, `next_action: re_retrieve`
+- verbatim quote → `supported`, score 1.0, byte-exact span `6549..6717`
+
 ## Limitations (current)
 - No retrieval or LLM calls yet; the verifier is exercised by unit tests only.
 - Corpus mode is the default until live search is wired.

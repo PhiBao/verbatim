@@ -121,6 +121,11 @@ impl Retrieval {
         self.mode
     }
 
+    /// When the snapshot was taken, so staleness is visible rather than hidden.
+    pub fn corpus_snapshot_time(&self) -> Option<String> {
+        self.corpus.iter().map(|d| d.snapshotted_at.clone()).max()
+    }
+
     pub fn corpus_len(&self) -> usize {
         self.corpus.len()
     }

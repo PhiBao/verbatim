@@ -32,6 +32,7 @@ sha2.workspace = true
 unicode-normalization.workspace = true
 hex.workspace = true
 async-trait.workspace = true
+async-stream.workspace = true
 dotenvy.workspace = true
 
 # LLM seam — AWS Bedrock (Amazon Converse API)

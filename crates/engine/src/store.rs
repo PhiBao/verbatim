@@ -312,6 +312,60 @@ impl Store {
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
+    /// One line per run, for `verbatim runs list`.
+    pub fn run_summaries(&self) -> Result<Vec<RunSummary>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT run_id, kind, body FROM events WHERE kind IN ('run.started', 'run.compiled')
+                 ORDER BY seq",
+            )
+            .context("prepare run summaries")?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .context("query run summaries")?;
+
+        let mut out: std::collections::BTreeMap<String, RunSummary> = Default::default();
+        for row in rows.flatten() {
+            let (run_id, kind, body) = row;
+            let body: serde_json::Value = serde_json::from_str(&body).unwrap_or(json_null());
+            let entry = out.entry(run_id.clone()).or_insert_with(|| RunSummary {
+                run_id: run_id.clone(),
+                mode: "verified".into(),
+                question: String::new(),
+                claims: 0,
+                verified: 0,
+            });
+            match kind.as_str() {
+                "run.started" => {
+                    entry.mode = body
+                        .get("mode")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("verified")
+                        .to_string();
+                    entry.question = body
+                        .get("question")
+                        .and_then(|q| q.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                }
+                _ => {
+                    if let Some(stats) = body.get("artifact").and_then(|a| a.get("stats")) {
+                        entry.claims = stats.get("claims_checked").and_then(|v| v.as_u64()).unwrap_or(0);
+                        entry.verified = stats.get("verified").and_then(|v| v.as_u64()).unwrap_or(0);
+                    }
+                }
+            }
+        }
+        Ok(out.into_values().collect())
+    }
+
     /// Total events, for the health endpoint.
     pub fn event_count(&self) -> Result<u64> {
         let conn = self.conn.lock().unwrap();
@@ -320,6 +374,16 @@ impl Store {
             .map(|o| o.unwrap_or(0) as u64)
             .context("count events")
     }
+}
+
+/// One line of `verbatim runs list`.
+#[derive(Debug, Clone)]
+pub struct RunSummary {
+    pub run_id: String,
+    pub mode: String,
+    pub question: String,
+    pub claims: u64,
+    pub verified: u64,
 }
 
 fn json_null() -> serde_json::Value {

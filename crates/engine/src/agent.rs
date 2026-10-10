@@ -45,6 +45,26 @@ pub struct Agent {
     cancelled: std::sync::atomic::AtomicBool,
 }
 
+/// One audited sentence from an external answer.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AuditClaim {
+    pub text: String,
+    pub verdict: Verdict,
+    pub source_url: Option<String>,
+    /// Where the first matching fact sits in that source's original bytes.
+    pub span: Option<crate::text::Span>,
+    /// Facts found in no source we read.
+    pub missing: Vec<String>,
+    pub facts: Vec<String>,
+}
+
+/// The result of auditing someone else's answer.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct AuditReport {
+    pub claims: Vec<AuditClaim>,
+    pub stats: Stats,
+}
+
 /// What a finished run looks like.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RunResult {
@@ -689,6 +709,113 @@ impl Agent {
     }
 
     // ------------------------------------------------------------ projections
+
+    /// Fetches a single URL into a `Source`, for the audit endpoint.
+    pub async fn fetch_one(&self, url: &str) -> Result<Source> {
+        let r = self.retrieval.lock().await;
+        let doc = r.fetch(url).await?;
+        Ok(doc.into_source())
+    }
+
+    /// Audits an answer that came from somewhere else.
+    ///
+    /// This is the wedge that makes the technology legible in ten seconds. An
+    /// arbitrary answer carries no quotes, so the strongest deterministic check
+    /// available is **prior leak**: every distinctive fact in the answer must
+    /// appear in a source we actually read. A fact that appears in none was
+    /// invented or recalled, and we say so.
+    ///
+    /// We say exactly this in the README. We do not claim to check support, only
+    /// grounding — the claim-level verifier needs a quote, and an external answer
+    /// has none.
+    pub async fn audit(&self, answer: &str, sources: &[Source]) -> Result<AuditReport> {
+        let verifier = Verifier::new(sources);
+        let sentences: Vec<&str> = answer
+            .split(['.', '\n'])
+            .map(|s| s.trim())
+            .filter(|s| s.split_whitespace().count() >= 4)
+            .collect();
+
+        let mut claims = Vec::new();
+        let mut stats = Stats {
+            sources_fetched: sources.iter().filter(|s| !s.dead).count() as u32,
+            sources_dead: sources.iter().filter(|s| s.dead).count() as u32,
+            ..Default::default()
+        };
+
+        for sentence in sentences {
+            let facts = crate::verify::extract_facts(sentence);
+            if facts.is_empty() {
+                continue;
+            }
+            stats.claims_checked += 1;
+
+            // Which source, if any, carries the most of this sentence's facts?
+            let mut best: Option<(usize, usize, Option<crate::text::Span>)> = None;
+            for (i, s) in sources.iter().enumerate() {
+                if s.dead {
+                    continue;
+                }
+                let c = canonical(&s.text);
+                let mut hits = 0usize;
+                let mut first_span = None;
+                for f in &facts {
+                    if let Some(sp) = c.find(&f.canon) {
+                        hits += 1;
+                        if first_span.is_none() {
+                            first_span = Some(sp);
+                        }
+                    }
+                }
+                if hits == 0 {
+                    continue;
+                }
+                if best.map(|(h, _, _)| hits > h).unwrap_or(true) {
+                    best = Some((hits, i, first_span));
+                }
+            }
+
+            let missing: Vec<String> = facts
+                .iter()
+                .filter(|f| !sources.iter().any(|s| !s.dead && canonical(&s.text).contains(&f.canon)))
+                .map(|f| f.raw.clone())
+                .collect();
+
+            let verdict = if missing.is_empty() {
+                stats.verified += 1;
+                Verdict::Supported
+            } else if missing.len() == facts.len() {
+                stats.ungrounded += 1;
+                Verdict::Ungrounded
+            } else {
+                stats.unsupported += 1;
+                Verdict::Unsupported
+            };
+
+            claims.push(AuditClaim {
+                text: sentence.to_string(),
+                verdict,
+                source_url: best.map(|(_, i, _)| sources[i].url.clone()),
+                span: best.and_then(|(_, _, sp)| sp),
+                missing,
+                facts: facts.iter().map(|f| f.raw.clone()).collect(),
+            });
+        }
+
+        let _ = verifier;
+        Ok(AuditReport { claims, stats })
+    }
+
+    /// What the pinned corpus contains, for the UI and for honesty.
+    pub fn corpus_summary(&self) -> serde_json::Value {
+        let mode = self.retrieval_mode_of_str();
+        let r = self.retrieval.blocking_lock();
+        serde_json::json!({
+            "mode": mode,
+            "documents": r.corpus_len(),
+            "snapshotted_at": r.corpus_snapshot_time(),
+        })
+    }
 
     fn compiled_plan(&self, events: &[Event]) -> Result<Option<Plan>> {
         Ok(events
