@@ -267,3 +267,8 @@ export const EntirePlugin: Plugin = async ({ directory }) => {
     },
   }
 }
+
+// OpenCode's plugin loader requires a default export; Entire's generator emits
+// only a named one. This line is the whole fix — regenerate-safe as long as it
+// is re-applied after `entire enable`.
+export default EntirePlugin
