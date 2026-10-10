@@ -1,0 +1,23 @@
+# Never copy host build output into the image: it clobbers what the image
+# installs itself, and pnpm then refuses to reconcile without a TTY.
+web/node_modules
+web/.next
+web/out
+
+target
+var
+.env
+.env.*
+
+.git
+.gitignore
+docker.log
+
+.DS_Store
+.idea
+.vscode
+*.md
+!README.md
+
+# Local scratch the engine writes when a trace is rejected.
+/tmp

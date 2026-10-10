@@ -12,8 +12,18 @@ cd /app/web
 HOSTNAME=0.0.0.0 PORT=3000 node server.js &
 WEB_PID=$!
 
-# If either dies, the container should die: a half-up demo is worse than none.
-wait -n "$ENGINE_PID" "$WEB_PID"
-STATUS=$?
-kill "$ENGINE_PID" "$WEB_PID" 2>/dev/null || true
-exit "$STATUS"
+# `wait -n` is not POSIX and this image uses dash, so poll instead. If either
+# process dies the container dies: a half-up demo is worse than a clean failure.
+while :; do
+  if ! kill -0 "$ENGINE_PID" 2>/dev/null; then
+    echo "engine exited; stopping" >&2
+    kill "$WEB_PID" 2>/dev/null || true
+    exit 1
+  fi
+  if ! kill -0 "$WEB_PID" 2>/dev/null; then
+    echo "web server exited; stopping" >&2
+    kill "$ENGINE_PID" 2>/dev/null || true
+    exit 1
+  fi
+  sleep 2
+done

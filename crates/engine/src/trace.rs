@@ -215,6 +215,10 @@ impl Tracer {
         Self {
             client: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(10))
+                // neatlogs' ingest rejects requests with no User-Agent with a
+                // bare nginx 403, which reads like an auth failure and is not.
+                // reqwest sends no User-Agent unless told to.
+                .user_agent(concat!("verbatim/", env!("CARGO_PKG_VERSION")))
                 .build()
                 .unwrap_or_default(),
             endpoint,
@@ -240,46 +244,86 @@ impl Tracer {
         self.enabled
     }
 
+    /// The ingest endpoint rejects bodies over roughly 8 KB with a bare nginx
+    /// 403, which reads like an auth failure and is not. Measured by bisecting a
+    /// real run's payload. A trace that would exceed it is split.
+    const MAX_PAYLOAD_BYTES: usize = 7_500;
+
     /// Posts one trace. `session` groups the traces of one question together,
     /// so the naive and verified runs of the same question sit side by side.
-    pub async fn emit(&self, name: &str, session: &str, root: Span) -> Option<String> {
+    pub async fn emit(&self, name: &str, session: &str, root: Span) -> Vec<String> {
         if !self.enabled {
-            return None;
+            return vec![];
         }
-        let payload = json!({
-            "name": name,
-            "project": self.project,
-            "attributes": {
-                "neatlogs.session.id": session,
-                "neatlogs.workflow.name": name,
-            },
-            "input": root.input.clone().unwrap_or(json!({})),
-            "children": root.children.iter().map(Span::to_json).collect::<Vec<_>>(),
-        });
+        let children: Vec<Span> = root.children;
+        let chunks = chunk_children(children, Self::MAX_PAYLOAD_BYTES);
+        let mut ids = Vec::new();
 
+        for (i, chunk) in chunks.into_iter().enumerate() {
+            // A split trace keeps the session id, so the dashboard still groups
+            // every part of one run together.
+            let trace_name = if i == 0 {
+                name.to_string()
+            } else {
+                format!("{name}/part{i}")
+            };
+            let payload = json!({
+                "name": trace_name,
+                "project": self.project,
+                "attributes": {
+                    "neatlogs.session.id": session,
+                    "neatlogs.workflow.name": name,
+                },
+                "input": root.input.clone().unwrap_or(json!({})),
+                "children": chunk.iter().map(Span::to_json).collect::<Vec<_>>(),
+            });
+            if let Some(id) = self.send(&payload).await {
+                ids.push(id);
+            }
+        }
+        ids
+    }
+
+    /// Sends one already-built payload.
+    async fn send(&self, payload: &Value) -> Option<String> {
         let mut req = self
             .client
             .post(format!("{}/v1/trace", self.endpoint.trim_end_matches('/')))
-            .json(&payload);
+            .json(payload);
         if let Some(k) = &self.write_key {
             req = req.bearer_auth(k);
         }
 
         match req.send().await {
-            Ok(resp) if resp.status().is_success() => {
-                let body: Value = resp.json().await.unwrap_or(json!({}));
-                let id = body
-                    .get("trace_id")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string);
-                let spans = body.get("spans").and_then(|v| v.as_u64()).unwrap_or(0);
-                tracing::info!(trace_id = ?id, spans = spans, "neatlogs trace ingested");
-                *self.last.lock().await = id.clone();
-                id
-            }
             Ok(resp) => {
-                tracing::warn!(status = %resp.status(), "neatlogs rejected trace");
-                None
+                let status = resp.status();
+                if status.is_success() {
+                    let body: Value = resp.json().await.unwrap_or(json!({}));
+                    let id = body
+                        .get("trace_id")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string);
+                    let spans = body.get("spans").and_then(|v| v.as_u64()).unwrap_or(0);
+                    tracing::info!(trace_id = ?id, spans = spans, "neatlogs trace ingested");
+                    *self.last.lock().await = id.clone();
+                    id
+                } else {
+                    let body = resp.text().await.unwrap_or_default();
+                    // Keep the rejected payload so it can be replayed and
+                    // diagnosed; without it a 403 is guesswork.
+                    let _ = std::fs::write(
+                        "/tmp/opencode/last-trace-payload.json",
+                        payload.to_string(),
+                    );
+                    tracing::warn!(
+                        status = %status,
+                        body = %body,
+                        spans = root_span_count(&payload),
+                        bytes = %payload.to_string().len(),
+                        "neatlogs rejected trace"
+                    );
+                    None
+                }
             }
             Err(e) => {
                 tracing::warn!(error = %e, "neatlogs ingest failed");
@@ -294,9 +338,74 @@ impl Tracer {
     }
 }
 
+/// Splits a span tree into groups whose serialised size stays under `limit`.
+///
+/// A long research run produces one span per search, fetch and verification, and
+/// the whole tree for one run measured 10.5 KB against an ~8 KB ceiling. Rather
+/// than dropping spans, they are split across traces that share a session id.
+fn chunk_children(children: Vec<Span>, limit: usize) -> Vec<Vec<Span>> {
+    let mut out: Vec<Vec<Span>> = vec![vec![]];
+    let mut used = 0usize;
+    for child in children {
+        let size = serde_json::to_string(&child.to_json()).map(|s| s.len()).unwrap_or(0);
+        if !out.last().unwrap().is_empty() && used + size > limit {
+            out.push(vec![]);
+            used = 0;
+        }
+        used += size;
+        out.last_mut().unwrap().push(child);
+    }
+    out.retain(|c| !c.is_empty());
+    if out.is_empty() {
+        out.push(vec![]);
+    }
+    out
+}
+
+/// Number of spans in a payload, for the rejection log.
+fn root_span_count(payload: &Value) -> usize {
+    payload
+        .get("children")
+        .and_then(|c| c.as_array())
+        .map(|a| a.len())
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_trace_over_the_ingest_ceiling_is_split_not_dropped() {
+        // A real run produced 10.5 KB in one trace and the endpoint answered
+        // 403. Bisecting a live payload put the ceiling between 7.6 KB and
+        // 9.7 KB, so anything larger must be split across traces that share a
+        // session id.
+        let mut big = Span::workflow("run");
+        for i in 0..40 {
+            big.push(
+                Span::guardrail(format!("verify_{i}"))
+                    .with_input(json!({ "claim": "x".repeat(300) })),
+            );
+        }
+        let chunks = chunk_children(big.children, 7_500);
+        assert!(chunks.len() > 1, "a large tree must be split");
+        for c in &chunks {
+            let bytes: usize = c
+                .iter()
+                .map(|s| serde_json::to_string(&s.to_json()).map(|v| v.len()).unwrap_or(0))
+                .sum();
+            assert!(bytes <= 7_500, "chunk of {bytes} bytes still exceeds the ceiling");
+        }
+    }
+
+    #[test]
+    fn small_traces_are_not_split() {
+        let mut root = Span::workflow("run");
+        root.push(Span::agent("planner"));
+        let chunks = chunk_children(root.children, 7_500);
+        assert_eq!(chunks.len(), 1);
+    }
 
     #[test]
     fn guardrail_failure_becomes_an_error_span() {

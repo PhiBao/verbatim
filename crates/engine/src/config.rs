@@ -73,7 +73,17 @@ impl Config {
             aws_region: std::env::var("AWS_REGION")
                 .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
                 .unwrap_or_else(|_| "us-east-1".into()),
-            litellm_base_url: std::env::var("LITELLM_BASE_URL").ok().filter(|s| !s.is_empty()),
+            // The gateway address is not a secret and has a sensible default, so
+            // setting only the key is enough to use it.
+            litellm_base_url: std::env::var("LITELLM_BASE_URL")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .or_else(|| {
+                    std::env::var("LITELLM_API_KEY")
+                        .ok()
+                        .filter(|k| !k.is_empty())
+                        .map(|_| "https://litellm.vision.aivar.app/v1".to_string())
+                }),
             litellm_api_key: std::env::var("LITELLM_API_KEY").ok().filter(|s| !s.is_empty()),
             litellm_model: std::env::var("LITELLM_MODEL")
                 .unwrap_or_else(|_| crate::llm::OpenAiCompatLlm::cheapest_model().into()),

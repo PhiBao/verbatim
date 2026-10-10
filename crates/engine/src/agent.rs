@@ -270,8 +270,7 @@ impl Agent {
 
         let session = session_of(run_id);
         root.duration_ms = started.elapsed().as_millis() as u64;
-        let trace_id = self.tracer.emit("verbatim.run", &session, root).await;
-        if let Some(t) = trace_id {
+        for t in self.tracer.emit("verbatim.run", &session, root).await {
             let _ = self.store.record_trace(run_id, &t, &session);
         }
 
