@@ -27,12 +27,24 @@ with sync_playwright() as p:
     page = browser.new_page(viewport={"width": 1600, "height": 1400})
     page.goto(url, wait_until="domcontentloaded", timeout=90_000)
 
-    try:
-        page.wait_for_function(
-            "() => document.body.innerText.length > 400", timeout=45_000
-        )
-    except Exception:
-        pass
+    # The shared view occasionally renders a "We couldn't load this scenario"
+    # error on first paint. It is transient — the HTML has the real title and a
+    # reload brings the content up.
+    for attempt in range(4):
+        try:
+            page.wait_for_function(
+                "() => document.body.innerText.length > 400", timeout=25_000
+            )
+        except Exception:
+            pass
+        body = page.inner_text("body")
+        if "couldn't load" in body or "Try again" in body:
+            print(f"attempt {attempt + 1}: transient load error, reloading")
+            page.wait_for_timeout(4_000)
+            page.reload(wait_until="domcontentloaded", timeout=90_000)
+            page.wait_for_timeout(5_000)
+            continue
+        break
     page.wait_for_timeout(6_000)
 
     # Dismiss the sign-in modal so it does not sit over the tables.

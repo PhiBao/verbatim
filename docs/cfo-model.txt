@@ -1,0 +1,135 @@
+Search
+Chats
+
+No active chats.
+
+Model
+
+Base
+
+Verbatim — Unit Economics & Runway
+
+Feedback
+
+Verbatim — Unit Economics & Runway
+
+Verbatim — Unit Economics & Runway
+
+Jan-26 -> Sep-28
+
+Verbatim — unit economics & runway
+
+Verbatim is an AI research agent that verifies every sentence it writes against its source and labels anything it can't verify. It sells monthly subscriptions (Free / Solo $49 / Team $199 / Enterprise custom).
+
+How to read this page: the three scenarios change only the number of paying customers at month 12 (Downside 60, Base 250, Upside 900, all starting from 250 today). Price and cost per report are identical in every scenario, so gross margin is identical too — the scenarios differ in scale, burn and runway.
+
+Headline: each paying customer earns ~$239/month and costs ~$40/month to serve (≈$9 inference + ≈$31 infrastructure), so gross margin is ~83%. Against $60k/month of operating costs, Verbatim breaks even at ~301 paying customers. Unit economics aren't the risk; distribution is.
+
+Measured vs estimated: model cost per report is measured at $0.007 but the model uses a deliberately rounded-up $0.02 assumption. Enterprise price ($1,500/mo), Enterprise usage (2,000 reports/mo), full use of plan allowances, and 3 free users per paying customer are estimates. Cash ($500k) and opex ($60k/mo) are planning assumptions. All inputs live on the Verbatim Assumptions page.
+
+Runway simulator
+
+This block failed to render.
+
+Cannot read properties of undefined (reading 'series')
+
+Scenario comparison — customers, margin, runway
+Scenario comparison — customers, margin, runway
+
+Jan-01-26 -> Sep-30-28
+
+Raw
+
+=
+
+`Paying customers`
+Date.Month
+Paying customers at month 12
+
+Value
+
+Base
+
+Downside
+
+Upside
+
+Paying customers at month 12
+
+Monthly revenue at month 12
+
+Inference cost at month 12
+
+Infrastructure cost at month 12
+
+Gross profit at month 12
+
+Gross margin at month 12
+
+Runway (months)
+
+Runway verdict
+
+Break-even paying customers
+
+250
+60
+900
+$59,775
+$14,346
+$215,190
+$2,200
+$528
+$7,920
+$7,700
+$1,848
+$27,720
+$49,875
+$11,970
+$179,550
+83.4%
+83.4%
+83.4%
+49.4
+13.7
+Cash lasts beyond the plan at end-of-plan burn
+Cash runs out inside the plan
+Unlimited — turns cash-flow positive
+300.752
+300.752
+300.752
+Per-customer unit economics (summary)
+Per-customer unit economics (summary)
+
+Jan-01-26 -> Sep-30-28
+
+Raw
+
+=
+
+sum(
+`ARPU contribution`
+`Plan tier`
+)
+Blended ARPU
+
+Value
+
+Blended ARPU
+
+Total reports per paying customer
+
+Inference cost per paying customer
+
+Infrastructure cost per paying customer
+
+Gross profit per paying customer
+
+Gross margin per paying customer
+
+239.1
+440
+8.8
+30.8
+199.5
+0.834
