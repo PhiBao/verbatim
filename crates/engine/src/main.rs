@@ -104,12 +104,26 @@ async fn snapshot(cfg: &Config) -> anyhow::Result<()> {
 }
 
 async fn build_llm(cfg: &Config) -> Arc<dyn engine::llm::Llm> {
-    if cfg.has_llm() {
-        match engine::llm::BedrockLlm::new(&cfg.aws_region, &cfg.bedrock_model_id).await {
-            llm => Arc::new(llm),
-        }
-    } else {
-        tracing::warn!("no AWS credentials: the agent will run with a replay LLM, which is only useful for tests and demos");
-        Arc::new(engine::llm::ReplayLlm::new(vec![]))
+    // The LiteLLM gateway wins when configured: it is cheap, it is what the
+    // hackathon provides, and its $20 shared budget is exactly the kind of
+    // constraint this project is about.
+    if let (Some(base), Some(key)) = (cfg.litellm_base_url.clone(), cfg.litellm_api_key.clone()) {
+        tracing::info!(
+            model = %cfg.litellm_model,
+            gateway = %base,
+            "using the hackathon LiteLLM gateway (shared $20 budget)"
+        );
+        return Arc::new(engine::llm::OpenAiCompatLlm::new(base, key, cfg.litellm_model.clone()));
     }
+
+    if cfg.has_llm() {
+        tracing::info!(model = %cfg.bedrock_model_id, "using AWS Bedrock");
+        return Arc::new(engine::llm::BedrockLlm::new(&cfg.aws_region, &cfg.bedrock_model_id).await);
+    }
+
+    tracing::warn!(
+        "no model credentials: the agent will run with a replay LLM, which only replays \
+         canned responses. Set LITELLM_API_KEY or AWS credentials to run for real."
+    );
+    Arc::new(engine::llm::ReplayLlm::new(vec![]))
 }

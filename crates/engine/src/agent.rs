@@ -15,7 +15,7 @@ use crate::retrieval::{FetchedDoc, Retrieval, RetrievalMode};
 use crate::store::{Event, Store};
 use crate::text::canonical;
 use crate::trace::{Span, Tracer};
-use crate::verify::Verifier;
+use crate::verify::{ClaimPair, Verifier};
 use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -103,6 +103,9 @@ impl Agent {
             neatlogs_endpoint: "http://127.0.0.1:1".into(),
             bedrock_model_id: "test".into(),
             aws_region: "us-east-1".into(),
+            litellm_base_url: None,
+            litellm_api_key: None,
+            litellm_model: "test".into(),
             search_provider: "none".into(),
             search_api_key: None,
             retrieval_mode: "corpus".into(),
@@ -870,9 +873,20 @@ fn compile_artifact(
     cost_cents: f64,
 ) -> Artifact {
     let _ = cost_cents;
+    // Overlapping sub-questions retrieve the same page and re-derive the same
+    // fact, so collapsing happens here — across every sub-question, which is the
+    // only place all the claims are in one list.
+    let claims = dedupe_claims(claims);
+
+    // Two sources can both be quoted correctly and still disagree. That is a
+    // conflict, and it gets resolved with a recorded rule rather than by the
+    // compiler picking whichever claim it happened to see first.
+    let (claims, conflicts) = resolve_conflicts(claims, &sources, question);
+
     let mut stats = Stats {
         sources_fetched: sources.iter().filter(|s| !s.dead).count() as u32,
         sources_dead: sources.iter().filter(|s| s.dead).count() as u32,
+        conflicts: conflicts.len() as u32,
         ..Default::default()
     };
 
@@ -896,7 +910,15 @@ fn compile_artifact(
         }
     }
 
-    let answer_md = render_answer(question, mode, &publishable, &unverified, &stats, cost_cents);
+    let answer_md = render_answer(
+        question,
+        mode,
+        &publishable,
+        &unverified,
+        &stats,
+        cost_cents,
+        &conflicts,
+    );
 
     Artifact {
         question: question.to_string(),
@@ -905,6 +927,7 @@ fn compile_artifact(
         sources,
         unverified,
         stats,
+        conflicts,
     }
 }
 
@@ -917,6 +940,7 @@ fn render_answer(
     unverified: &[Claim],
     stats: &Stats,
     cost_cents: f64,
+    conflicts: &[Conflict],
 ) -> String {
     let mut md = String::new();
     md.push_str(&format!("## {question}\n\n"));
@@ -949,6 +973,27 @@ fn render_answer(
         md.push('\n');
     }
 
+    if !conflicts.is_empty() {
+        md.push_str("### Sources disagree\n\n");
+        for c in conflicts {
+            md.push_str(&format!(
+                "**{}**\n\n| | value | source |\n|---|---|---|\n",
+                c.key
+            ));
+            md.push_str(&format!(
+                "| left | {} | {} |\n",
+                c.left.value.as_deref().unwrap_or("—"),
+                host_of(&c.left.url)
+            ));
+            md.push_str(&format!(
+                "| right | {} | {} |\n\n",
+                c.right.value.as_deref().unwrap_or("—"),
+                host_of(&c.right.url)
+            ));
+            md.push_str(&format!("Resolved by: _{}_\n\n", c.rule));
+        }
+    }
+
     md.push_str("### Verification\n\n");
     md.push_str(&format!(
         "- claims checked: **{}**\n- verified: **{}**\n- contradicted: {} · unsupported: {} · ungrounded: {} · conflicts: {} · unverifiable: {}\n- sources read: {} ({} unavailable)\n- verified share: **{:.0}%**\n- run cost: **${:.3}**\n",
@@ -962,7 +1007,7 @@ fn render_answer(
         stats.sources_fetched,
         stats.sources_dead,
         stats.verified_fraction() * 100.0,
-        cost_cents,
+        cost_cents / 100.0,
     ));
     md
 }
@@ -1038,6 +1083,206 @@ fn claim_json(c: &Claim) -> Value {
         "corroborators": c.corroborators,
     })
 }
+
+/// Collapses claims that rest on the same evidence.
+///
+/// Overlapping sub-questions retrieve the same page, and the claimer will
+/// re-derive the same fact for each — the token-bucket sentence came back four
+/// times in one run, worded four different ways. Substring comparison is too
+/// weak for that; the reliable signal is that both claims quote **overlapping
+/// spans of the same source**. Same evidence, same fact.
+
+/// A disagreement between two sources about the same quantity.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Conflict {
+    pub key: String,
+    pub left: Side,
+    pub right: Side,
+    /// The rule that decided, recorded so the decision is auditable.
+    pub rule: String,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Side {
+    pub url: String,
+    pub claim_id: uuid::Uuid,
+    pub value: Option<String>,
+    pub quote: String,
+}
+
+/// Finds pairs of verified claims that quote different sources disagreeing on
+/// the same quantity, and resolves them with a recorded rule.
+///
+/// The rule is deliberately simple and stateable in one sentence: **the source
+/// whose host carries the entity the claim is about wins.** A vendor's own docs
+/// beat a third-party blog about that vendor. When neither side is
+/// authoritative the conflict is left unresolved and reported, rather than
+/// silently decided.
+fn resolve_conflicts(
+    claims: Vec<Claim>,
+    sources: &[Source],
+    question: &str,
+) -> (Vec<Claim>, Vec<Conflict>) {
+    let verifier = Verifier::new(sources);
+    let pairs: Vec<ClaimPair> = claims
+        .iter()
+        .map(|c| ClaimPair {
+            claim_id: c.id,
+            source_id: c.source_id,
+            text: c.text.clone(),
+        })
+        .collect();
+    let detected = verifier.conflicts(&pairs);
+    if detected.is_empty() {
+        return (claims, vec![]);
+    }
+
+    let mut out: Vec<Conflict> = Vec::new();
+    let mut losers: Vec<uuid::Uuid> = Vec::new();
+
+    for d in detected {
+        let left = claims.iter().find(|c| c.text == d.left.claim);
+        let right = claims.iter().find(|c| c.text == d.right.claim);
+        let (Some(l), Some(r)) = (left, right) else {
+            continue;
+        };
+        let lurl = source_url(sources, l.source_id);
+        let rurl = source_url(sources, r.source_id);
+
+        let value_of = |c: &Claim| -> Option<String> {
+            crate::verify::extract_facts(&c.text)
+                .into_iter()
+                .find(|f| f.kind == crate::verify::FactKind::Number)
+                .map(|f| f.raw)
+        };
+
+        let l_auth = is_authoritative(&lurl, &l.text, question);
+        let r_auth = is_authoritative(&rurl, &r.text, question);
+        let (rule, winner_id) = match (l_auth, r_auth) {
+            (true, false) => (
+                format!("{} is the primary source for this subject", host_of(&lurl)),
+                l.id,
+            ),
+            (false, true) => (
+                format!("{} is the primary source for this subject", host_of(&rurl)),
+                r.id,
+            ),
+            _ => (
+                "neither source is primary, so the disagreement is reported unresolved".into(),
+                uuid::Uuid::nil(),
+            ),
+        };
+
+        out.push(Conflict {
+            key: d.key.clone(),
+            left: Side {
+                url: lurl.clone(),
+                claim_id: l.id,
+                value: value_of(l),
+                quote: l.quote.clone(),
+            },
+            right: Side {
+                url: rurl.clone(),
+                claim_id: r.id,
+                value: value_of(r),
+                quote: r.quote.clone(),
+            },
+            rule,
+        });
+
+        if winner_id.is_nil() {
+            // Unresolved: neither side may ship, because we cannot say which.
+            losers.push(l.id);
+            losers.push(r.id);
+        } else {
+            // The claim that lost on authority is the one that gets dropped.
+            losers.push(if winner_id == l.id { r.id } else { l.id });
+        }
+    }
+
+    let kept: Vec<Claim> = claims
+        .into_iter()
+        .filter(|c| !losers.contains(&c.id))
+        .collect();
+    (kept, out)
+}
+
+fn is_authoritative(url: &str, claim: &str, question: &str) -> bool {
+    let host = host_of(url).to_lowercase();
+    if host.is_empty() {
+        return false;
+    }
+    // A source is authoritative when its host carries the entity the run is
+    // about. The claim alone is not enough — a claim about "the API" names no
+    // vendor — so the question that started the run supplies the subject too.
+    let entities: Vec<String> = crate::verify::extract_facts(question)
+        .into_iter()
+        .chain(crate::verify::extract_facts(claim))
+        .filter(|f| {
+            matches!(
+                f.kind,
+                crate::verify::FactKind::ProperNoun | crate::verify::FactKind::Acronym
+            )
+        })
+        .map(|f| f.raw.to_lowercase())
+        .filter(|e| e.len() >= 4 && !GENERIC_ENTITIES.contains(&e.as_str()))
+        .collect();
+    entities.iter().any(|e| host.contains(e))
+}
+
+const GENERIC_ENTITIES: [&str; 8] = ["api", "http", "https", "docs", "blog", "www", "com", "test"];
+
+fn host_of(url: &str) -> String {
+    reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_else(|| url.to_string())
+}
+
+fn dedupe_claims(claims: Vec<Claim>) -> Vec<Claim> {
+    let mut kept: Vec<Claim> = Vec::new();
+    for c in claims {
+        let duplicate = kept.iter().any(|k| {
+            if k.source_id != c.source_id {
+                return false;
+            }
+            match (k.span, c.span) {
+                // Same source, overlapping evidence: the same fact restated.
+                (Some(a), Some(b)) => a.start < b.end && b.start < a.end,
+                // No verified span, so fall back to wording overlap.
+                _ => similar(&k.text, &c.text),
+            }
+        });
+        if !duplicate {
+            kept.push(c);
+        }
+    }
+    kept
+}
+
+/// Word-overlap similarity on content words, used only when a claim has no
+/// verified span to compare. A claim supported by a real quote is judged on its
+/// evidence, not its phrasing.
+fn similar(a: &str, b: &str) -> bool {
+    let words = |t: &str| -> std::collections::BTreeSet<String> {
+        canonical(t)
+            .canon
+            .split(' ')
+            .filter(|w| w.len() > 3 && !GENERIC.contains(w))
+            .map(str::to_string)
+            .collect()
+    };
+    let wa = words(a);
+    let wb = words(b);
+    let inter = wa.intersection(&wb).count();
+    let union = wa.union(&wb).count();
+    union > 0 && (inter as f64 / union as f64) >= 0.6
+}
+
+const GENERIC: [&str; 12] = [
+    "that", "this", "with", "from", "which", "their", "there", "when", "will", "they", "been",
+    "also",
+];
 
 fn source_url(sources: &[Source], id: Uuid) -> String {
     sources

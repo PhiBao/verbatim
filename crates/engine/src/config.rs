@@ -22,6 +22,12 @@ pub struct Config {
     pub bedrock_model_id: String,
     pub aws_region: String,
 
+    /// The hackathon's LiteLLM gateway. Cheap, shared, and budget-capped at $20
+    /// per key over 30 days — so it is the default when configured.
+    pub litellm_base_url: Option<String>,
+    pub litellm_api_key: Option<String>,
+    pub litellm_model: String,
+
     /// Search provider: `brave` or `none` (corpus-only).
     pub search_provider: String,
     pub search_api_key: Option<String>,
@@ -67,6 +73,10 @@ impl Config {
             aws_region: std::env::var("AWS_REGION")
                 .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
                 .unwrap_or_else(|_| "us-east-1".into()),
+            litellm_base_url: std::env::var("LITELLM_BASE_URL").ok().filter(|s| !s.is_empty()),
+            litellm_api_key: std::env::var("LITELLM_API_KEY").ok().filter(|s| !s.is_empty()),
+            litellm_model: std::env::var("LITELLM_MODEL")
+                .unwrap_or_else(|_| crate::llm::OpenAiCompatLlm::cheapest_model().into()),
             search_provider,
             search_api_key,
             retrieval_mode,
@@ -78,8 +88,19 @@ impl Config {
     }
 
     /// True when we can actually reach an LLM.
+    /// The model the agent will actually call, and where.
+    pub fn llm_target(&self) -> String {
+        if self.litellm_api_key.is_some() {
+            format!("{}{}", self.litellm_base_url.clone().unwrap_or_default(), self.litellm_model)
+        } else {
+            format!("bedrock:{}", self.bedrock_model_id)
+        }
+    }
+
     pub fn has_llm(&self) -> bool {
-        std::env::var("AWS_ACCESS_KEY_ID").is_ok() && std::env::var("AWS_SECRET_ACCESS_KEY").is_ok()
+        self.litellm_api_key.is_some()
+            || (std::env::var("AWS_ACCESS_KEY_ID").is_ok()
+                && std::env::var("AWS_SECRET_ACCESS_KEY").is_ok())
     }
 
     pub fn has_neatlogs(&self) -> bool {
@@ -93,7 +114,7 @@ impl Config {
             "neatlogs": self.has_neatlogs(),
             "search": self.search_provider != "none" && self.search_api_key.is_some(),
             "retrieval": self.retrieval_mode,
-            "model": self.bedrock_model_id,
+            "model": self.llm_target(),
         })
     }
 

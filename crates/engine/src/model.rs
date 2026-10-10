@@ -133,6 +133,8 @@ pub struct Artifact {
     pub sources: Vec<Source>,
     pub unverified: Vec<Claim>,
     pub stats: Stats,
+    /// Every disagreement the run found between sources, and how it was resolved.
+    pub conflicts: Vec<crate::agent::Conflict>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
