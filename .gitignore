@@ -11,8 +11,10 @@
 *.pdb
 
 # --- node ---
-/node_modules
-/web/node_modules
+# A bare pattern, so it applies at any depth. The plugin directory previously
+# had 9,344 node_modules files committed, which is why they all showed as
+# deleted the moment the directory moved.
+node_modules/
 /web/.next
 /web/out
 /web/build
