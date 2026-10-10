@@ -126,3 +126,37 @@ test — the handler is now async. Logged because the test did not catch it.
 2. Agent loop with budget enforcement and checkpoint/resume.
 3. Frontend reading surface and receipts margin.
 4. Demo, video, cfo.ai model, submission.
+
+**Model + gateway (completed)**
+The hackathon's LiteLLM gateway is the model path (`claude-haiku` by default,
+because the key carries a **$20 shared budget over 30 days** and cost is a
+first-class constraint, not an afterthought). Measured cost per run: **$0.007**.
+The agent also enforces its own 2-cent-per-run ceiling so a runaway loop cannot
+spend the team's allowance.
+
+**Full run verified (completed)** — `cargo test --workspace` → **39 passing**.
+One run end to end, verified locally and again from the built container:
+
+- 6 claims checked, all verified, 3 sources read
+- **1 conflict detected and resolved by a recorded rule**: a decoy source in the
+  pinned corpus claims the free tier allows 500 requests per minute; Anthropic's
+  own docs say 60. Both quotes are verbatim. The conflict detector surfaces the
+  disagreement, resolves it with *"the source whose host carries the entity the
+  run is about wins"*, drops the losing claim, and prints the disagreement in the
+  answer rather than silently deciding it.
+- 2 traces ingested, ids `87300af2...`, `98a082e2...`
+
+**Deployment (completed, not yet pushed)**
+Single container: the Rust engine binds loopback, Next proxies `/api/*` to it,
+only port 3000 exposed. Image builds at 223 MB. Verified running locally with the
+real model and real traces.
+
+### Open items
+- Deploy to Fly.io (needs `fly auth login`).
+- cfo.ai business plan.
+- Demo video.
+- **Entire checkpoint: 0 so far.** The hook is installed at
+  `.opencode/plugins/entire.ts`, but it loads when an OpenCode session *starts*,
+  and this session began before `entire enable` ran. A commit made from a fresh
+  OpenCode session will produce the first checkpoint. This is the one sponsor
+  requirement still unmet.
