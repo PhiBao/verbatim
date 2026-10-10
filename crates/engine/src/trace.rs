@@ -104,6 +104,22 @@ impl Span {
         self.tokens = Some((prompt, completion));
         self
     }
+    pub fn with_tool_name(mut self, t: impl Into<String>) -> Self {
+        self.tool_name = Some(t.into());
+        self
+    }
+    pub fn with_query(mut self, q: impl Into<Value>) -> Self {
+        self.query = Some(q.into());
+        self
+    }
+    pub fn with_documents(mut self, d: Vec<String>) -> Self {
+        self.documents = Some(d);
+        self
+    }
+    pub fn with_model(mut self, m: impl Into<String>) -> Self {
+        self.model = Some(m.into());
+        self
+    }
     pub fn with_duration(mut self, ms: u64) -> Self {
         self.duration_ms = ms;
         self

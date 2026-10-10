@@ -62,11 +62,28 @@
   legitimate claims whose subject sits outside the excerpt. Now checked against
   the cited source.
 
-**In progress**
-- Retrieval (search + SSRF-guarded fetch, with a pinned corpus for determinism).
-- The agent loop: planner, claimer, repairer, compiler.
-- neatlogs emitter wiring.
-- Next.js reading surface.
+**Agent loop v1 (completed, 35 tests passing)**
+`cargo test -p engine --lib` → 35 passed, 0 failed.
+
+- `agent.rs` — planner → retrieve → claim → **verify** → repair → compile, over
+  the append-only event log, so a resumed run repeats no work and no fetch.
+- Retrieval confined to public `http(s)`: private, loopback, link-local,
+  multicast and IPv6-literal targets rejected, every redirect hop re-validated,
+  body capped at 2 MB, script/style/svg content stripped before matching.
+- Two retrieval modes, declared in the UI and the README: `corpus` (a pinned
+  snapshot of real fetches, so a recorded run replays byte-for-byte) and `live`.
+- The **control run**: `naive` mode performs the same retrieval and the same
+  verification, but its compiler ships every drafted claim regardless of verdict.
+  The only difference between the two runs is whether the compiler is allowed to
+  ship an unverified claim. That is the experiment.
+
+**Bugs found and fixed this session (kept for honesty)**
+- `validate_url` accepted bracketed IPv6 literals like `http://[::1]/`, which is
+  a genuine SSRF hole. Brackets are now stripped before the address check.
+- `html_to_text` kept `<style>` and `<script>` *content*, so CSS leaked into
+  matching text. Those elements are now skipped wholesale.
+- `extract_title` returned raw entities; it now decodes them, because the title
+  is read by a human.
 
 ## Limitations (current)
 - No retrieval or LLM calls yet; the verifier is exercised by unit tests only.

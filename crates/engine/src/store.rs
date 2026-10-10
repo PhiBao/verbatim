@@ -64,6 +64,23 @@ impl Store {
                 at              TEXT NOT NULL
             );
 
+            -- A source fetched for one run. Sources are derived data: the
+            -- event log records that a fetch happened, this holds its text.
+            CREATE TABLE IF NOT EXISTS sources (
+                run_id        TEXT NOT NULL,
+                id            TEXT NOT NULL,
+                url           TEXT NOT NULL,
+                title         TEXT,
+                http_status   INTEGER NOT NULL,
+                content_hash  TEXT NOT NULL,
+                bytes         INTEGER NOT NULL,
+                text          TEXT NOT NULL,
+                fetched_at    TEXT NOT NULL,
+                dead          INTEGER NOT NULL DEFAULT 0,
+                dead_reason   TEXT,
+                PRIMARY KEY (run_id, id)
+            );
+
             -- Correlates a run with the neatlogs trace id we got back for it.
             CREATE TABLE IF NOT EXISTS traces (
                 run_id     TEXT NOT NULL,
@@ -74,8 +91,7 @@ impl Store {
             );
             "#,
         )
-        .context("migrate")?;
-        Ok(Self {
+        .context("migrate")?;        Ok(Self {
             conn: std::sync::Arc::new(Mutex::new(conn)),
         })
     }
@@ -95,6 +111,13 @@ impl Store {
                 idempotency_key TEXT PRIMARY KEY,
                 run_id TEXT NOT NULL, tool TEXT NOT NULL,
                 args_hash TEXT NOT NULL, result_ref TEXT, at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS sources (
+                run_id TEXT NOT NULL, id TEXT NOT NULL, url TEXT NOT NULL,
+                title TEXT, http_status INTEGER NOT NULL, content_hash TEXT NOT NULL,
+                bytes INTEGER NOT NULL, text TEXT NOT NULL, fetched_at TEXT NOT NULL,
+                dead INTEGER NOT NULL DEFAULT 0, dead_reason TEXT,
+                PRIMARY KEY (run_id, id)
             );
             CREATE TABLE IF NOT EXISTS traces (
                 run_id TEXT NOT NULL, trace_id TEXT NOT NULL,
@@ -232,6 +255,60 @@ impl Store {
         let rows = stmt
             .query_map([run_id.to_string()], |r| r.get::<_, String>(0))
             .context("query traces")?;
+        Ok(rows.filter_map(|r| r.ok()).collect())
+    }
+
+    pub fn save_source(&self, run_id: Uuid, s: &crate::model::Source) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO sources
+             (run_id, id, url, title, http_status, content_hash, bytes, text, fetched_at, dead, dead_reason)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![
+                run_id.to_string(),
+                s.id.to_string(),
+                s.url,
+                s.title,
+                s.http_status as i64,
+                s.content_hash,
+                s.bytes as i64,
+                s.text,
+                s.fetched_at.to_rfc3339(),
+                s.dead as i64,
+                s.dead_reason,
+            ],
+        )
+        .context("save source")?;
+        Ok(())
+    }
+
+    pub fn load_sources(&self, run_id: Uuid) -> Result<Vec<crate::model::Source>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, url, title, http_status, content_hash, bytes, text, fetched_at, dead, dead_reason
+                 FROM sources WHERE run_id = ?1 ORDER BY fetched_at",
+            )
+            .context("prepare sources")?;
+        let rows = stmt
+            .query_map([run_id.to_string()], |r| {
+                let dead: i64 = r.get(8)?;
+                Ok(crate::model::Source {
+                    id: Uuid::parse_str(&r.get::<_, String>(0)?).unwrap_or_default(),
+                    url: r.get(1)?,
+                    title: r.get(2)?,
+                    http_status: r.get::<_, i64>(3)? as u16,
+                    content_hash: r.get(4)?,
+                    bytes: r.get::<_, i64>(5)? as usize,
+                    text: r.get(6)?,
+                    fetched_at: DateTime::parse_from_rfc3339(&r.get::<_, String>(7)?)
+                        .map(|d| d.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                    dead: dead != 0,
+                    dead_reason: r.get(9)?,
+                })
+            })
+            .context("query sources")?;
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 

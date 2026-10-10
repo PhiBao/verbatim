@@ -6,9 +6,11 @@
 //!
 //! Rule: if we didn't fetch it, we didn't say it.
 
+pub mod agent;
 pub mod config;
 pub mod llm;
 pub mod model;
+pub mod retrieval;
 pub mod store;
 pub mod text;
 pub mod trace;
