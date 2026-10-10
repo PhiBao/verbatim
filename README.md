@@ -79,6 +79,12 @@ with its reason. The headline metric is honest by construction — it can be zer
 
 ---
 
+![How a Verbatim run works](docs/diagrams/run.png)
+
+The verifier is the one step with no language model in it. It is also the only
+step that decides what may ship. `cfo.ai` sits outside the pipeline on purpose —
+nothing in a run flows to it, and drawing an arrow would suggest otherwise.
+
 ## The control run, and why it is the real demo
 
 `naive` mode performs the **same retrieval and the same verification**, but its
@@ -105,34 +111,7 @@ A run on a real conflict:
 
 ## Architecture
 
-```
-                    ┌──────────────────────────────────────────┐
-   ask / audit ───▶ │  Next.js reading surface                 │
-                    │  answer as a document · receipts margin   │
-                    └───────────────────┬──────────────────────┘
-                                        │ /api/* (single origin)
-                    ┌───────────────────▼──────────────────────┐
-                    │        Rust · Axum · rusqlite             │
-                    │                                           │
-                    │  planner ─▶ research loop                 │
-                    │     search ─ fetch ─ claim ─ verify ─ repair│
-                    │                    │                       │
-                    │           ┌────────▼──────────┐            │
-                    │           │  VERIFIER (no LLM)│  ★ the core │
-                    │           └────────┬──────────┘            │
-                    │                    ▼                        │
-                    │  answer compiler (refuses unverified)      │
-                    │                                           │
-                    │  append-only event log │ effects ledger    │
-                    │  (the only source of    │ (exactly-once,   │
-                    │   truth; UI is a         │  settle-then-    │
-                    │   projection)            │  commit)         │
-                    └───────────────────┬──────────────────────┘
-                                        │
-              neatlogs POST /v1/trace ──┤── Entire checkpoints per commit
-              (WORKFLOW/AGENT/LLM/     │
-               RETRIEVER/TOOL/GUARDRAIL)│── cfo.ai unit economics
-```
+_See the diagram above. The pipeline is one run; the event log is the source of truth; the three partner tools observe from outside it._
 
 **Backend: Rust** (Axum, Tokio, rusqlite, reqwest). Why: the verifier is the
 product's core claim, and Rust is the right language for a component whose
@@ -185,8 +164,19 @@ is visible in someone else's tool. Naive and verified runs share a
 (`answer.md`, `claims.json`), so **`entire why answer.md:34`** reveals the session
 behind any sentence: provenance of code, meeting provenance of claims.
 
-**cfo.ai** — unit economics for the agent: price per verified report, inference
-cost per report, gross margin, Base/Growth scenarios, runway.
+**cfo.ai** — unit economics for the agent, built in cfo.ai itself and readable
+by anyone: **https://cfo.ai/s/mAotSQsQFqUlV-xU**
+
+That sheet is where the numbers in this README come from, and it labels its own
+inputs rather than presenting them as facts: model cost per report is *measured*
+at $0.007, Enterprise price and usage are *estimates*, and cash and opex are
+*planning assumptions*. Its output: blended ARPU $239.10, gross margin **83.4%**,
+break-even at **301 paying customers**, and runway of 49.4 months in the Base
+scenario against 13.7 in Downside.
+
+One caveat it also states: the Enterprise price is a guess and, at a 10% mix, it
+drives most of the blended ARPU. Unit economics are not this business's risk.
+Distribution is.
 
 ---
 
@@ -256,7 +246,12 @@ fetched source.
 
 ## Demo
 
-**Live:** https://verbatim-neathack.fly.dev
+| | |
+|---|---|
+| **Live app** | https://verbatim-neathack.fly.dev |
+| **Demo video** | `docs/verbatim-demo.mp4` — 2m42s |
+| **Business model** | https://cfo.ai/s/mAotSQsQFqUlV-xU — the real cfo.ai sheet |
+| **Run with receipts** | [/ \?run=02078eb3-48a3-4aa5-94ab-6a01f9edfc22](https://verbatim-neathack.fly.dev/?run=02078eb3-48a3-4aa5-94ab-6a01f9edfc22) |
 
 A real run against the live web, unaided:
 

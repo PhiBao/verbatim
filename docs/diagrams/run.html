@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>How a Verbatim run works</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #fbfaf7;
+      --color-ink:     #1a1814;
+      --color-muted:   #55503f;
+      --color-accent:  #1f6b4a;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1240px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 1200px; display: block; }
+    @media print {
+      .diagram-container { overflow-x: visible; }
+      svg { min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">Architecture &middot; Verbatim</p>
+    <h1>How a Verbatim run works</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1200 500" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="run-title run-desc">
+        <title id="run-title">How a Verbatim run works</title>
+        <desc id="run-desc">A question becomes an answer through a six-step pipeline in which the verifier, which contains no language model, decides what may ship; an append-only event log records every step, and neatlogs, Entire and cfo.ai observe the run from outside it.</desc>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#55503f"/></marker>
+          <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#1f6b4a"/></marker>
+        </defs>
+
+        <rect width="100%" height="100%" fill="#fbfaf7"/>
+
+        <!-- zone: one run ==================================================== -->
+        <rect x="20" y="56" width="876" height="116" rx="8" fill="rgba(26,24,20,0.02)" stroke="rgba(26,24,20,0.10)" stroke-width="0.8"/>
+        <rect x="440" y="60" width="72" height="12" rx="2" fill="#fbfaf7"/>
+        <text x="476" y="69" fill="rgba(26,24,20,0.42)" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.14em">ONE RUN</text>
+
+        <!-- arrows, drawn before boxes ====================================== -->
+        <line x1="164" y1="122" x2="192" y2="122" stroke="#55503f" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="300" y1="122" x2="328" y2="122" stroke="#55503f" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <line x1="500" y1="122" x2="528" y2="122" stroke="#1f6b4a" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+        <line x1="688" y1="122" x2="716" y2="122" stroke="#1f6b4a" stroke-width="1.2" marker-end="url(#arrow-accent)"/>
+
+        <!-- repair: verifier sends a failed claim back to retrieval -->
+        <path d="M 572,156 V 206 Q 572,214 564,214 H 412 Q 404,214 404,206 V 160"
+              fill="none" stroke="#55503f" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arrow)"/>
+        <rect x="452" y="206" width="64" height="16" rx="2" fill="#fbfaf7"/>
+        <text x="484" y="217" fill="#8a8474" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">REPAIR</text>
+
+        <!-- retrieval settles into the log -->
+        <line x1="350" y1="156" x2="350" y2="312" stroke="#55503f" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="356" y="222" width="72" height="16" rx="2" fill="#fbfaf7"/>
+        <text x="360" y="233" fill="#8a8474" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">SETTLES</text>
+
+        <!-- verifier emits a trace -->
+        <line x1="610" y1="156" x2="610" y2="312" stroke="#55503f" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="616" y="222" width="64" height="16" rx="2" fill="#fbfaf7"/>
+        <text x="620" y="233" fill="#8a8474" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">TRACES</text>
+
+        <!-- the run commits its own artifact -->
+        <line x1="798" y1="156" x2="798" y2="312" stroke="#55503f" stroke-width="1.2" marker-end="url(#arrow)"/>
+        <rect x="804" y="222" width="72" height="16" rx="2" fill="#fbfaf7"/>
+        <text x="808" y="233" fill="#8a8474" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">COMMITS</text>
+
+        <!-- nodes ============================================================ -->
+        <!-- 1 input -->
+        <rect x="32" y="88" width="132" height="68" rx="6" fill="rgba(85,80,63,0.10)" stroke="#8a8474" stroke-width="1"/>
+        <rect x="44" y="98" width="40" height="12" rx="2" fill="rgba(85,80,63,0.14)"/>
+        <text x="48" y="107" fill="#55503f" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">INPUT</text>
+        <text x="44" y="130" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Ask / audit</text>
+        <text x="44" y="146" fill="#8a8474" font-size="9" font-family="'Geist Mono', monospace">ask, or audit</text>
+
+        <!-- 2 planner -->
+        <rect x="196" y="88" width="104" height="68" rx="6" fill="#ffffff" stroke="#1a1814" stroke-width="1"/>
+        <rect x="208" y="98" width="52" height="12" rx="2" fill="rgba(26,24,20,0.06)"/>
+        <text x="212" y="107" fill="#55503f" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">BACKEND</text>
+        <text x="208" y="130" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Planner</text>
+        <text x="208" y="146" fill="#8a8474" font-size="9" font-family="'Geist Mono', monospace">sub-questions</text>
+
+        <!-- 3 retrieve and draft -->
+        <rect x="332" y="88" width="168" height="68" rx="6" fill="#ffffff" stroke="#1a1814" stroke-width="1"/>
+        <rect x="344" y="98" width="52" height="12" rx="2" fill="rgba(26,24,20,0.06)"/>
+        <text x="348" y="107" fill="#55503f" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">BACKEND</text>
+        <text x="344" y="130" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Retrieve &amp; draft</text>
+        <text x="344" y="146" fill="#8a8474" font-size="9" font-family="'Geist Mono', monospace">search &middot; fetch &middot; claim</text>
+
+        <!-- 4 verifier, focal -->
+        <rect x="532" y="88" width="156" height="68" rx="6" fill="rgba(31,107,74,0.08)" stroke="#1f6b4a" stroke-width="1.2"/>
+        <rect x="544" y="98" width="44" height="12" rx="2" fill="rgba(31,107,74,0.14)"/>
+        <text x="548" y="107" fill="#1f6b4a" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">FOCAL</text>
+        <text x="544" y="130" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Verifier</text>
+        <text x="544" y="146" fill="#1f6b4a" font-size="9" font-family="'Geist Mono', monospace">5 checks &middot; no model</text>
+
+        <!-- 5 compile -->
+        <rect x="720" y="88" width="156" height="68" rx="6" fill="#ffffff" stroke="#1a1814" stroke-width="1"/>
+        <rect x="732" y="98" width="52" height="12" rx="2" fill="rgba(26,24,20,0.06)"/>
+        <text x="736" y="107" fill="#55503f" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">BACKEND</text>
+        <text x="732" y="130" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Compile</text>
+        <text x="732" y="146" fill="#8a8474" font-size="9" font-family="'Geist Mono', monospace">refuses unverified</text>
+
+        <!-- 6 store -->
+        <rect x="332" y="316" width="168" height="68" rx="6" fill="rgba(26,24,20,0.05)" stroke="#55503f" stroke-width="1"/>
+        <rect x="344" y="326" width="40" height="12" rx="2" fill="rgba(26,24,20,0.06)"/>
+        <text x="348" y="335" fill="#55503f" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">STORE</text>
+        <text x="344" y="358" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Event log</text>
+        <text x="344" y="374" fill="#8a8474" font-size="9" font-family="'Geist Mono', monospace">effects, exactly once</text>
+
+        <!-- 7 neatlogs -->
+        <rect x="532" y="316" width="156" height="68" rx="6" fill="rgba(26,24,20,0.03)" stroke="rgba(26,24,20,0.30)" stroke-width="1"/>
+        <rect x="544" y="326" width="56" height="12" rx="2" fill="rgba(26,24,20,0.05)"/>
+        <text x="548" y="335" fill="#55503f" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">EXTERNAL</text>
+        <text x="544" y="358" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">neatlogs</text>
+        <text x="544" y="374" fill="#8a8474" font-size="9" font-family="'Geist Mono', monospace">one trace per run</text>
+
+        <!-- 8 entire -->
+        <rect x="720" y="316" width="156" height="68" rx="6" fill="rgba(26,24,20,0.03)" stroke="rgba(26,24,20,0.30)" stroke-width="1"/>
+        <rect x="732" y="326" width="56" height="12" rx="2" fill="rgba(26,24,20,0.05)"/>
+        <text x="736" y="335" fill="#55503f" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">EXTERNAL</text>
+        <text x="732" y="358" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">Entire</text>
+        <text x="732" y="374" fill="#8a8474" font-size="9" font-family="'Geist Mono', monospace">commit &harr; session</text>
+
+        <!-- 9 cfo.ai, off the runtime path by design -->
+        <rect x="908" y="316" width="156" height="68" rx="6" fill="rgba(26,24,20,0.03)" stroke="rgba(26,24,20,0.30)" stroke-width="1"/>
+        <rect x="920" y="326" width="56" height="12" rx="2" fill="rgba(26,24,20,0.05)"/>
+        <text x="924" y="335" fill="#55503f" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.18em">EXTERNAL</text>
+        <text x="920" y="358" fill="#1a1814" font-size="12" font-weight="600" font-family="'Geist', sans-serif">cfo.ai</text>
+        <text x="920" y="374" fill="#8a8474" font-size="9" font-family="'Geist Mono', monospace">off-path: prices it</text>
+
+        <!-- callout ========================================================= -->
+        <text x="32" y="336" fill="#55503f" font-size="14" font-style="italic" font-family="'Instrument Serif', 'Noto Serif', serif">The verifier re-reads the cited</text>
+        <text x="32" y="356" fill="#55503f" font-size="14" font-style="italic" font-family="'Instrument Serif', 'Noto Serif', serif">source and checks the quoted</text>
+        <text x="32" y="376" fill="#55503f" font-size="14" font-style="italic" font-family="'Instrument Serif', 'Noto Serif', serif">evidence is really in it.</text>
+
+        <!-- legend ========================================================== -->
+        <g>
+          <rect x="32" y="428" width="16" height="10" rx="2" fill="rgba(85,80,63,0.10)" stroke="#8a8474" stroke-width="0.8"/>
+          <text x="54" y="437" fill="#55503f" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">INPUT</text>
+          <rect x="112" y="428" width="16" height="10" rx="2" fill="#ffffff" stroke="#1a1814" stroke-width="0.8"/>
+          <text x="134" y="437" fill="#55503f" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">BACKEND</text>
+          <rect x="210" y="428" width="16" height="10" rx="2" fill="rgba(31,107,74,0.08)" stroke="#1f6b4a" stroke-width="1"/>
+          <text x="232" y="437" fill="#55503f" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">FOCAL</text>
+          <rect x="288" y="428" width="16" height="10" rx="2" fill="rgba(26,24,20,0.05)" stroke="#55503f" stroke-width="0.8"/>
+          <text x="310" y="437" fill="#55503f" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">STORE</text>
+          <rect x="366" y="428" width="16" height="10" rx="2" fill="rgba(26,24,20,0.03)" stroke="rgba(26,24,20,0.30)" stroke-width="0.8"/>
+          <text x="388" y="437" fill="#55503f" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">EXTERNAL</text>
+          <line x1="472" y1="433" x2="500" y2="433" stroke="#55503f" stroke-width="1" stroke-dasharray="4,3"/>
+          <text x="508" y="437" fill="#55503f" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.06em">PASSIVE / REPAIR</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

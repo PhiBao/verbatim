@@ -1,3 +1,9 @@
+# --- private working instructions (never publish) ---
+# These define how the agent operates on this repo. They are not part of the
+# product and were purged from history, so they must never be re-added.
+AGENTS.md
+FOUNDER.md
+
 # --- secrets (never commit) ---
 .env
 .env.*

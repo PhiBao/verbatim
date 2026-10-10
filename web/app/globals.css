@@ -629,3 +629,69 @@ button.ghost {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
+
+/* ------------------------------------------------------------ colophon */
+
+.colophon {
+  border-top: 1px solid var(--rule);
+  margin-top: 4rem;
+  padding: 1.5rem 1.5rem 3rem;
+  max-width: var(--measure);
+  margin-left: auto;
+  margin-right: auto;
+  font-family: var(--sans);
+  font-size: 0.8125rem;
+}
+
+.colophon-row {
+  display: flex;
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.colophon-row:last-of-type {
+  border-bottom: 0;
+}
+
+.colophon-label {
+  color: var(--ink-faint);
+  flex: 0 0 12rem;
+  letter-spacing: 0.01em;
+}
+
+.colophon-links {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.colophon-links a {
+  color: var(--ink-soft);
+  text-decoration: none;
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.colophon-links a:hover {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.colophon-note {
+  margin-top: 1rem;
+  color: var(--ink-faint);
+  line-height: 1.55;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 40rem) {
+  .colophon-label {
+    flex: 0 0 auto;
+  }
+  .colophon-row {
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.5rem 0;
+  }
+}
