@@ -1,6 +1,8 @@
 import { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // A standalone server keeps the whole app in one container with the engine.
+  output: "standalone",
   // The engine owns every /api route. Next.js rewrites to it so the browser has
   // a single origin and CORS never enters the picture.
   async rewrites() {

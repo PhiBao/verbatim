@@ -1,0 +1,9 @@
+{
+  "name": "verbatim-neatlogs-plugin",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Traces every OpenCode turn in this repo to neatlogs, so the build itself is observable.",
+  "dependencies": {
+    "neatlogs": "^1.1.11"
+  }
+}

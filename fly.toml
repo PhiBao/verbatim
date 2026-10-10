@@ -1,0 +1,42 @@
+# fly.toml — Verbatim
+#
+# One machine, one region close to the team (India). The engine binds loopback
+# and is reached only through the Next proxy, so nothing but port 3000 is
+# exposed.
+
+app = "verbatim-neathack"
+primary_region = "bom"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  VERBATIM_BIND = "127.0.0.1:8787"
+  VERBATIM_RETRIEVAL = "corpus"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 20
+    hard_limit = 40
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"
+
+# Research runs are long and model-bound, so the request timeout is generous.
+[http_service.http_options]
+  [http_service.http_options.response]
+    timeout = "300s"
+
+# Never log trace bodies: an agent run can quote source text that was never
+# meant to be public, and the neatlogs write key must never appear in a log.
+[processes]
+  web = "/app/entrypoint.sh"
