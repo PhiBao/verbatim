@@ -233,3 +233,30 @@ exact path Entire reads. Two details that only showed up under test:
 
 Verified in a scratch repo: `refs/entire/checkpoints/C7/01M4KJ33...` created,
 `entire checkpoint list` reports 1.
+
+### Entire checkpoint — achieved
+
+```
+checkpoint  01M4KJ3WZ0YJFFS0NFWHW5RG24
+commit      6c76b849159d2ad3c622faec040d7ea739050401
+link        https://entire.io/gh/PhiBao/verbatim/commit/6c76b849159d2ad3c622faec040d7ea739050401
+ref         refs/entire/checkpoints/24/01M4KJ3WZ0YJFFS0NFWHW5RG24 (pushed to origin)
+files       scripts/entire-opencode-plugin.ts
+```
+
+To reproduce: run a session, make a real file change, and commit **normally** —
+without `-c core.hooksPath=/dev/null`, which is what every earlier commit in this
+log used and is the last piece of why none of them produced a checkpoint.
+
+#### Two limits worth knowing
+
+- **`git commit --allow-empty` never produces a checkpoint.** Entire reports "no
+  files modified during session, skipping checkpoint", so a test using an empty
+  commit proves nothing. The first three attempts failed for this reason and
+  looked like a broken pipeline.
+- **The transcript is stored in the checkpoint and this repository is public.**
+  Scanned the pushed checkpoint for every secret used in this project
+  (`sk-…`, `ziw-…`, `tvly-…`, `cd_…`, `AKIA`): zero hits, and Entire's redaction
+  pass reports as configured. But it is a transcript, so a session that pastes a
+  credential into the conversation would publish it. Do not paste secrets into a
+  session in this repo.
