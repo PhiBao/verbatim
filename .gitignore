@@ -1,0 +1,33 @@
+# --- secrets (never commit) ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- rust ---
+/target
+**/*.rs.bk
+*.pdb
+
+# --- node ---
+/node_modules
+/web/node_modules
+/web/.next
+/web/out
+/web/build
+.pnpm-store
+
+# --- dataset / runtime artifacts that are regenerated ---
+/var
+/corpus/cache
+
+# --- os / editor ---
+.DS_Store
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# --- misc ---
+*.log
+/tmp

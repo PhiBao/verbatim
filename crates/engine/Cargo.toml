@@ -1,0 +1,43 @@
+[package]
+name = "engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "engine"
+path = "src/lib.rs"
+
+[[bin]]
+name = "engine"
+path = "src/main.rs"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "trace"] }
+tokio-stream = "0.1"
+futures-util = "0.3"
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+reqwest.workspace = true
+rusqlite.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+sha2.workspace = true
+unicode-normalization.workspace = true
+hex.workspace = true
+async-trait.workspace = true
+dotenvy.workspace = true
+
+# LLM seam — AWS Bedrock (Amazon Converse API)
+aws-config = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-bedrockruntime = "1"
+aws-smithy-types = "1"
+
+[dev-dependencies]
+tempfile = "3"
