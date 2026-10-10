@@ -26,6 +26,7 @@ function Footer() {
       <div className="colophon-row">
         <span className="colophon-label">Built at neatHack 2026</span>
         <nav className="colophon-links">
+          <a href="https://youtu.be/Zifq7diJUUg">Demo, 2m42s</a>
           <a href="https://github.com/PhiBao/verbatim">Source</a>
           <a href="https://github.com/PhiBao/verbatim/blob/main/LICENSE">MIT</a>
         </nav>
