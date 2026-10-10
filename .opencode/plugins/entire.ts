@@ -268,7 +268,11 @@ export const EntirePlugin: Plugin = async ({ directory }) => {
   }
 }
 
-// OpenCode's plugin loader requires a default export; Entire's generator emits
-// only a named one. This line is the whole fix — regenerate-safe as long as it
-// is re-applied after `entire enable`.
-export default EntirePlugin
+// OpenCode v2 requires the default export to be a definition object with an `id`
+// and an `effect` function. Entire's generator emits only a named function
+// export, which fails validation with "must export a default definition with an
+// id and an effect or setup function". Re-apply this after `entire enable`.
+export default {
+  id: "entire",
+  effect: EntirePlugin,
+};
