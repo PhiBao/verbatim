@@ -171,6 +171,19 @@ async fn get_run(
     let effects = s.agent.store.effects(run_id).unwrap_or_default();
     let trace_ids = s.agent.store.trace_ids(run_id).unwrap_or_default();
 
+    // The stored artifact carries the full text of every source, because the
+    // verifier needs it. That is megabytes for a normal run and none of it
+    // belongs in an API response: the UI renders citations, not source bodies.
+    let artifact = artifact.map(|a| crate::api::ArtifactView {
+        question: a.question,
+        answer_md: a.answer_md,
+        claims: a.claims,
+        unverified: a.unverified,
+        conflicts: a.conflicts,
+        stats: a.stats,
+        sources: a.sources.iter().map(crate::api::source_meta).collect(),
+    });
+
     Ok(Json(serde_json::json!({
         "run_id": run_id,
         "question": question,
@@ -304,6 +317,33 @@ fn run_payload(res: &RunResult) -> serde_json::Value {
     })
 }
 
+/// The artifact as the UI sees it: same claims, same stats, no source bodies.
+#[derive(serde::Serialize)]
+pub struct ArtifactView {
+    pub question: String,
+    pub answer_md: String,
+    pub claims: Vec<crate::model::Claim>,
+    pub unverified: Vec<crate::model::Claim>,
+    pub conflicts: Vec<crate::agent::Conflict>,
+    pub stats: crate::model::Stats,
+    pub sources: Vec<serde_json::Value>,
+}
+
+/// Source metadata only. The verifier keeps the text; the response does not.
+pub fn source_meta(s: &Source) -> serde_json::Value {
+    serde_json::json!({
+        "id": s.id,
+        "url": s.url,
+        "title": s.title,
+        "http_status": s.http_status,
+        "bytes": s.bytes,
+        "sha256": s.content_hash,
+        "dead": s.dead,
+        "dead_reason": s.dead_reason,
+        "fetched_at": s.fetched_at,
+    })
+}
+
 fn source_json(s: &Source) -> serde_json::Value {
     serde_json::json!({
         "id": s.id,
@@ -333,15 +373,42 @@ fn steps_of(events: &[crate::store::Event]) -> Vec<serde_json::Value> {
             "run.compiled" => "Compiled",
             other => other,
         };
+        // Event bodies can embed whole retrieved pages, because the log is the
+        // source of truth and the verifier needs them. The timeline does not:
+        // long strings are truncated with a marker so the payload stays small
+        // and nothing is silently dropped.
         out.push(serde_json::json!({
             "seq": e.seq,
             "kind": e.kind,
             "label": label,
             "at": e.at,
-            "body": e.body,
+            "body": truncate_deep(&e.body, 600),
         }));
     }
     out
+}
+
+/// Truncates every string in a JSON value deeper than `max` characters.
+///
+/// The event log legitimately contains whole retrieved pages. The timeline
+/// renders labels and durations, so a bound here keeps responses small without
+/// discarding anything the UI shows.
+pub fn truncate_deep(v: &serde_json::Value, max: usize) -> serde_json::Value {
+    match v {
+        serde_json::Value::String(s) if s.chars().count() > max => {
+            let head: String = s.chars().take(max).collect();
+            serde_json::Value::String(format!("{head}\n\u{2026} [{} chars truncated]", s.chars().count()))
+        }
+        serde_json::Value::Array(a) => {
+            serde_json::Value::Array(a.iter().map(|x| truncate_deep(x, max)).collect())
+        }
+        serde_json::Value::Object(o) => serde_json::Value::Object(
+            o.iter()
+                .map(|(k, x)| (k.clone(), truncate_deep(x, max)))
+                .collect(),
+        ),
+        other => other.clone(),
+    }
 }
 
 /// Formats a stats block for the CLI and the README.

@@ -5,7 +5,7 @@
 # exposed.
 
 app = "verbatim-neathack"
-primary_region = "bom"
+primary_region = "sin"
 
 [build]
   dockerfile = "Dockerfile"
@@ -17,6 +17,7 @@ primary_region = "bom"
 
 [http_service]
   internal_port = 3000
+  processes = ["web"]
   force_https = true
   auto_stop_machines = "stop"
   auto_start_machines = true
