@@ -260,3 +260,14 @@ log used and is the last piece of why none of them produced a checkpoint.
   pass reports as configured. But it is a transcript, so a session that pastes a
   credential into the conversation would publish it. Do not paste secrets into a
   session in this repo.
+
+### Checkpoint after the history rewrite
+
+The purge rewrote every commit, so the two checkpoints recorded earlier now
+point at SHAs that no longer exist. A fresh one was captured on a real commit:
+
+```
+checkpoint  01M4KQNDHEF4YFPRHX4E13YQ8W
+commit      938a4a461991046258f57523d69f67d624d3f76b
+link        https://entire.io/gh/PhiBao/verbatim/commit/938a4a461991046258f57523d69f67d624d3f76b
+```
