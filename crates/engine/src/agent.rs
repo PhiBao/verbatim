@@ -245,9 +245,14 @@ impl Agent {
         }
 
         // Research every sub-question, then compile.
-        let mut all_claims: Vec<Claim> = Vec::new();
         let mut sources = self.store.load_sources(run_id)?;
         let already_done: std::collections::HashSet<String> = self.done_sub_questions(&events);
+
+        // A resumed run must keep the work done before the interruption. Claims
+        // from already-completed sub-questions are re-read from the event log,
+        // because the log is the source of truth and the process that produced
+        // them is gone.
+        let mut all_claims: Vec<Claim> = self.claims_from_events(&events);
 
         for sub in &plan.sub_questions {
             if self.is_cancelled() {
@@ -911,6 +916,24 @@ impl Agent {
             .and_then(|v| serde_json::from_value::<Artifact>(v).ok()))
     }
 
+    /// Rebuilds the claims of sub-questions that already completed.
+    ///
+    /// Without this a resumed run silently drops everything it did before the
+    /// interruption and compiles a shorter answer than the work justifies.
+    fn claims_from_events(&self, events: &[Event]) -> Vec<Claim> {
+        let mut out = Vec::new();
+        for e in events.iter().filter(|e| e.kind == "step.claims.drafted") {
+            if let Some(arr) = e.body.get("claims").and_then(|c| c.as_array()) {
+                for c in arr {
+                    if let Some(claim) = claim_from_json(c) {
+                        out.push(claim);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     fn done_sub_questions(&self, events: &[Event]) -> std::collections::HashSet<String> {
         events
             .iter()
@@ -1354,6 +1377,26 @@ const GENERIC: [&str; 12] = [
     "also",
 ];
 
+/// Rebuilds a `Claim` from the JSON the event log stores.
+fn claim_from_json(v: &serde_json::Value) -> Option<Claim> {
+    Some(Claim {
+        id: uuid::Uuid::parse_str(v.get("id")?.as_str()?).ok()?,
+        text: v.get("text")?.as_str()?.to_string(),
+        source_id: uuid::Uuid::parse_str(v.get("source_id")?.as_str()?).ok()?,
+        quote: v.get("quote")?.as_str()?.to_string(),
+        verdict: serde_json::from_value(v.get("verdict")?.clone()).ok()?,
+        score: v.get("score")?.as_f64()?,
+        reason: v.get("reason")?.as_str().unwrap_or("").to_string(),
+        next_action: serde_json::from_value(
+            v.get("next_action").cloned().unwrap_or(serde_json::Value::Null),
+        )
+        .unwrap_or(NextAction::None),
+        span: serde_json::from_value(v.get("span").cloned().unwrap_or(serde_json::Value::Null))
+            .ok(),
+        corroborators: v.get("corroborators").and_then(|c| c.as_u64()).unwrap_or(1) as u32,
+    })
+}
+
 fn source_url(sources: &[Source], id: Uuid) -> String {
     sources
         .iter()
@@ -1490,6 +1533,70 @@ mod tests {
             second.artifact.claims.len(),
             "a resumed finished run must not redo work"
         );
+    }
+
+    #[tokio::test]
+    async fn a_resumed_run_keeps_the_claims_made_before_the_kill() {
+        // The bug this pins: a resumed run re-read the event log for the plan but
+        // started its claim list empty, so everything done before the kill was
+        // silently dropped and the answer came back shorter than the work.
+        let a = test_agent();
+        let run = a.start("q?", crate::model::Mode::Verified).await.unwrap();
+        let sid = uuid::Uuid::new_v4();
+        let claim = Claim {
+            id: uuid::Uuid::new_v4(),
+            text: "The limit is 100 requests per minute.".into(),
+            source_id: sid,
+            quote: "100 requests per minute".into(),
+            verdict: crate::model::Verdict::Supported,
+            score: 1.0,
+            reason: "supported".into(),
+            next_action: NextAction::None,
+            span: None,
+            corroborators: 1,
+        };
+        a.store
+            .append(
+                run,
+                "step.claims.drafted",
+                serde_json::json!({
+                    "sub_question_id": "q1",
+                    "sub_question": "q1",
+                    "urls": [],
+                    "claims": [claim_json(&claim)],
+                }),
+            )
+            .unwrap();
+        a.store
+            .append(run, "step.sub_question.completed", serde_json::json!({"sub_question_id": "q1"}))
+            .unwrap();
+
+        let events = a.store.events(run).unwrap();
+        let recovered = a.claims_from_events(&events);
+        assert_eq!(recovered.len(), 1, "a completed sub-question's claim was lost");
+        assert_eq!(recovered[0].text, claim.text);
+        assert_eq!(recovered[0].verdict, crate::model::Verdict::Supported);
+    }
+
+    #[test]
+    fn claims_round_trip_through_the_event_log() {
+        let c = Claim {
+            id: uuid::Uuid::new_v4(),
+            text: "Tier 4 has 4,000 RPM.".into(),
+            source_id: uuid::Uuid::new_v4(),
+            quote: "4,000 RPM".into(),
+            verdict: crate::model::Verdict::Contradicted,
+            score: 0.4,
+            reason: "wrong value".into(),
+            next_action: NextAction::ReRetrieve("tier limits".into()),
+            span: Some(crate::text::Span { start: 3, end: 11 }),
+            corroborators: 2,
+        };
+        let json = claim_json(&c);
+        let back = claim_from_json(&json).expect("must round-trip");
+        assert_eq!(back.verdict, c.verdict);
+        assert_eq!(back.span, c.span);
+        assert_eq!(back.corroborators, 2);
     }
 
     #[test]

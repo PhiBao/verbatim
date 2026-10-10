@@ -151,7 +151,7 @@ async fn verify(
     } else {
         RetrievalMode::Live
     };
-    let r = Retrieval::new(mode, &cfg.corpus_dir);
+    let r = Retrieval::new(mode, &cfg.corpus_dir, cfg.tavily_key.clone());
     let doc = r
         .fetch(source_url)
         .await
@@ -223,7 +223,7 @@ async fn audit(cfg: &Config, answer: &str, sources: &[String]) -> Result<()> {
     }
     let cfg2 = cfg.clone();
     let llm = Arc::new(ReplayLlm::new(vec![]));
-    let r = Retrieval::new(RetrievalMode::Corpus, &cfg2.corpus_dir);
+    let r = Retrieval::new(RetrievalMode::Corpus, &cfg2.corpus_dir, cfg2.tavily_key.clone());
     let agent = Agent::for_test(llm, r)?;
 
     let mut fetched = Vec::new();
@@ -342,7 +342,7 @@ async fn runs(cfg: &Config, cmd: RunsCmd) -> Result<()> {
         RunsCmd::Resume { run_id } => {
             let id = uuid::Uuid::parse_str(&run_id).with_context(|| format!("bad run id {run_id}"))?;
             let llm = Arc::new(ReplayLlm::new(vec![]));
-            let agent = Agent::for_test(llm, Retrieval::new(RetrievalMode::Corpus, &cfg.corpus_dir))?;
+            let agent = Agent::for_test(llm, Retrieval::new(RetrievalMode::Corpus, &cfg.corpus_dir, cfg.tavily_key.clone()))?;
             let _ = id;
             println!(
                 "resume replays the ledger and continues from the last settled step.\n\nRun the engine with `cargo run -p engine` and POST /api/runs/<id>/resume, or use `verbatim runs show {id}` to replay what has already happened."
@@ -370,7 +370,7 @@ async fn runs(cfg: &Config, cmd: RunsCmd) -> Result<()> {
 }
 
 async fn corpus(cfg: &Config) -> Result<()> {
-    let r = Retrieval::new(RetrievalMode::Corpus, &cfg.corpus_dir);
+    let r = Retrieval::new(RetrievalMode::Corpus, &cfg.corpus_dir, cfg.tavily_key.clone());
     let docs = r.corpus_len();
     if docs == 0 {
         println!("the pinned corpus is empty. Build it with `engine snapshot`.");
