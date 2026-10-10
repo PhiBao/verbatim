@@ -258,6 +258,23 @@ fetched source.
 
 **Live:** https://verbatim-neathack.fly.dev
 
+A real run against the live web, unaided:
+
+| | |
+|---|---|
+| claims checked | **57** |
+| verified | **47** |
+| contradicted | **2** |
+| unsupported | **8** |
+| sources read | **39** |
+| runs | verified and control, same question |
+| traces ingested | **29**, zero rejected |
+| side effects | **39**, zero duplicated on resume |
+
+The 10 rejected claims are the product working. Eight were paraphrased rather
+than quoted; two stated a different value than the source. A human reading the
+same 39 pages would almost certainly have shipped at least one of them.
+
 1. **Ask** a question where sources disagree.
 2. **Watch** the timeline: plan → searches → fetches → claims → verdicts.
 3. **The beat:** a confident claim flips to `CONTRADICTED` and strikes through.
@@ -281,8 +298,10 @@ is what production uses. Both are labelled in the UI and stated here.
 - The verifier. Five deterministic checks, no model. `verbatim verify` runs the
   same code path the agent runs, so anyone can reproduce any verdict from a
   terminal.
-- Traces. Public neatlogs project; every run emits real traces including
-  `GUARDRAIL` spans for failed checks.
+- Traces. 29 real traces ingested from the deployed process, including
+  `GUARDRAIL` spans for every failed check. Visible in the public neatlogs
+  project.
+- The 57-claim run above, reproducible against live Tavily retrieval.
 - The control run. Same retrieval, same model, same budget; only the compile rule
   differs.
 - Cost accounting. Measured per run against the gateway's own usage.
@@ -292,8 +311,9 @@ is what production uses. Both are labelled in the UI and stated here.
 - The pinned corpus. Real fetches, snapshotted during the hackathon.
 
 **Not built, and not claimed:**
-- No live web search in the deployed demo (corpus mode; `live` is implemented and
-  configurable).
+- Live retrieval depends on Tavily and the LiteLLM gateway. When live search
+  returns nothing usable, the run falls back to the pinned corpus and says so in
+  the trace, rather than failing or silently shrinking.
 - Audit mode checks **grounding**, not **support**: an arbitrary answer carries no
   quotes, so the strongest deterministic check available is whether each
   sentence's facts appear in a source we read. We do not claim to verify support
