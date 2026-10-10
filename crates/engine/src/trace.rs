@@ -129,17 +129,49 @@ impl Span {
         self.children.push(child);
     }
 
+    /// Longest string a span may carry.
+    ///
+    /// A guardrail span holds the claim, the quote and the reason, and a research
+    /// span holds every search and fetch beneath it. One sub-question measured
+    /// 18.5 KB in a single span — far over the ingest ceiling, and a ceiling no
+    /// amount of chunking can fix, because chunking splits spans, not span
+    /// bodies. So strings are capped here, at serialisation, where it always
+    /// applies.
+    const MAX_STRING: usize = 400;
+
+    /// Largest serialised span we will send.
+    const SPAN_BUDGET: usize = 3_000;
+
     fn to_json(&self) -> Value {
+        self.to_json_capped(Self::MAX_STRING)
+    }
+
+    /// Serialises with an adaptive string cap.
+    ///
+    /// A span with many children is large even when every string is short — one
+    /// research span with 30 guardrails beneath it measured 27 KB at a 400-char
+    /// cap. So the cap tightens until the whole span fits, which is the only
+    /// bound that actually holds.
+    fn to_json_capped(&self, cap: usize) -> Value {
+        let built = self.build_json(cap);
+        let size = serde_json::to_string(&built).map(|s| s.len()).unwrap_or(0);
+        if size > Self::SPAN_BUDGET && cap > 48 {
+            return self.to_json_capped(cap / 2);
+        }
+        built
+    }
+
+    fn build_json(&self, cap: usize) -> Value {
         let mut m = serde_json::Map::new();
         m.insert("name".into(), json!(self.name));
         if let Some(k) = &self.kind {
             m.insert("kind".into(), json!(k));
         }
         if let Some(v) = &self.input {
-            m.insert("input".into(), v.clone());
+            m.insert("input".into(), cap_deep(v, cap));
         }
         if let Some(v) = &self.output {
-            m.insert("output".into(), v.clone());
+            m.insert("output".into(), cap_deep(v, cap));
         }
         if let Some(v) = &self.model {
             m.insert("model".into(), json!(v));
@@ -151,12 +183,12 @@ impl Span {
             );
         }
         if let Some(q) = &self.query {
-            m.insert("query".into(), q.clone());
+            m.insert("query".into(), cap_deep(q, cap));
         }
         if let Some(d) = &self.documents {
             m.insert(
                 "documents".into(),
-                json!(d.iter().map(|s| json!(s)).collect::<Vec<_>>()),
+                json!(d.iter().map(|s| json!(cap_str(s, cap))).collect::<Vec<_>>()),
             );
         }
         if let Some(t) = &self.tool_name {
@@ -181,9 +213,17 @@ impl Span {
             m.insert("attributes".into(), Value::Object(self.attributes.clone()));
         }
         if !self.children.is_empty() {
+            // Children inherit the parent's cap. Without this each child caps
+            // itself independently to the full budget, so thirty children can
+            // still total ninety kilobytes.
             m.insert(
                 "children".into(),
-                Value::Array(self.children.iter().map(Span::to_json).collect()),
+                Value::Array(
+                    self.children
+                        .iter()
+                        .map(|c| c.to_json_capped(cap))
+                        .collect(),
+                ),
             );
         }
         Value::Object(m)
@@ -247,7 +287,7 @@ impl Tracer {
     /// The ingest endpoint rejects bodies over roughly 8 KB with a bare nginx
     /// 403, which reads like an auth failure and is not. Measured by bisecting a
     /// real run's payload. A trace that would exceed it is split.
-    const MAX_PAYLOAD_BYTES: usize = 7_500;
+    const MAX_PAYLOAD_BYTES: usize = 4_500;
 
     /// Posts one trace. `session` groups the traces of one question together,
     /// so the naive and verified runs of the same question sit side by side.
@@ -255,7 +295,13 @@ impl Tracer {
         if !self.enabled {
             return vec![];
         }
-        let children: Vec<Span> = root.children;
+        // Structure first, then content: flattening changes what the children
+        // are, so it has to run before the string cap is chosen.
+        let children: Vec<Span> = root
+            .children
+            .into_iter()
+            .flat_map(|c| bound_structure(c, Span::SPAN_BUDGET))
+            .collect();
         let chunks = chunk_children(children, Self::MAX_PAYLOAD_BYTES);
         let mut ids = Vec::new();
 
@@ -338,22 +384,92 @@ impl Tracer {
     }
 }
 
-/// Splits a span tree into groups whose serialised size stays under `limit`.
+/// Truncates one string, leaving a marker so the reader knows it was cut.
+fn cap_str(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let head: String = s.chars().take(max).collect();
+    format!("{head}\n\u{2026} [{} chars truncated]", s.chars().count())
+}
+
+/// Truncates every string in a JSON value.
+fn cap_deep(v: &Value, max: usize) -> Value {
+    match v {
+        Value::String(s) => Value::String(cap_str(s, max)),
+        Value::Array(a) => Value::Array(a.iter().map(|x| cap_deep(x, max)).collect()),
+        Value::Object(o) => Value::Object(
+            o.iter().map(|(k, x)| (k.clone(), cap_deep(x, max))).collect(),
+        ),
+        other => other.clone(),
+    }
+}
+
+/// Splits a span tree into groups that fit the ingest ceiling.
 ///
 /// A long research run produces one span per search, fetch and verification, and
-/// the whole tree for one run measured 10.5 KB against an ~8 KB ceiling. Rather
-/// than dropping spans, they are split across traces that share a session id.
-fn chunk_children(children: Vec<Span>, limit: usize) -> Vec<Vec<Span>> {
-    let mut out: Vec<Vec<Span>> = vec![vec![]];
-    let mut used = 0usize;
-    for child in children {
-        let size = serde_json::to_string(&child.to_json()).map(|s| s.len()).unwrap_or(0);
-        if !out.last().unwrap().is_empty() && used + size > limit {
-            out.push(vec![]);
-            used = 0;
+/// their bodies carry real claim text and quotes. Measuring only the children is
+/// not enough — the root fields cost several hundred bytes too — so this packs
+/// greedily against the *whole payload* and verifies each chunk before accepting
+/// it. Live retrieval made the earlier size-only estimate wrong.
+/// Bounds a span's *structure*.
+///
+/// Two independent bounds are needed and they measure different things. The
+/// adaptive string cap bounds content; this bounds shape. A span holding thirty
+/// verifications is large because of its shape, and tightening the cap past a
+/// point starts discarding the evidence the trace exists to show.
+///
+/// Measured uncapped on purpose: measuring a capped span always reports "fits",
+/// so the pass never fires. That is the bug this replaces.
+fn bound_structure(span: Span, budget: usize) -> Vec<Span> {
+    let size = serde_json::to_string(&span.build_json(usize::MAX))
+        .map(|s| s.len())
+        .unwrap_or(0);
+    if size > budget && !span.children.is_empty() {
+        let mut marker = span;
+        let kids = std::mem::take(&mut marker.children);
+        marker
+            .attributes
+            .insert("verbatim.flattened_from".into(), json!(kids.len()));
+        let mut out = vec![marker];
+        for k in kids {
+            out.extend(bound_structure(k, budget));
         }
-        used += size;
-        out.last_mut().unwrap().push(child);
+        out
+    } else {
+        vec![span]
+    }
+}
+
+fn chunk_children(children: Vec<Span>, limit: usize) -> Vec<Vec<Span>> {
+    let payload_size = |chunk: &[Span]| -> usize {
+        serde_json::to_string(&serde_json::json!({
+            "name": "verbatim.run",
+            "project": "neathack",
+            "attributes": {
+                "neatlogs.session.id": "00000000-0000-0000-0000-000000000000",
+                "neatlogs.workflow.name": "verbatim.run",
+            },
+            "input": {},
+            "children": chunk.iter().map(Span::to_json).collect::<Vec<_>>(),
+        }))
+        .map(|s| s.len())
+        .unwrap_or(usize::MAX)
+    };
+
+    let mut out: Vec<Vec<Span>> = vec![vec![]];
+    for child in children {
+        let candidate = {
+            let mut v = out.last().unwrap().clone();
+            v.push(child.clone());
+            v
+        };
+        if !out.last().unwrap().is_empty() && payload_size(&candidate) > limit {
+            // This child does not fit with the others; start a fresh chunk.
+            out.push(vec![child]);
+        } else {
+            *out.last_mut().unwrap() = candidate;
+        }
     }
     out.retain(|c| !c.is_empty());
     if out.is_empty() {
@@ -397,6 +513,54 @@ mod tests {
                 .sum();
             assert!(bytes <= 7_500, "chunk of {bytes} bytes still exceeds the ceiling");
         }
+    }
+
+    #[test]
+    fn a_single_oversized_span_is_bounded_not_dropped() {
+        // One research span measured 18.5 KB on its own, because it holds every
+        // search and verification beneath it. Two independent bounds fix it, and
+        // they measure different things: the string cap bounds content,
+        // structural flattening bounds shape. Testing only the cap passes while
+        // the real payload still gets a 403.
+        let mut big = Span::agent("research");
+        for i in 0..30 {
+            big.push(
+                Span::guardrail(format!("verify_{i}"))
+                    .with_input(json!({ "claim": "x".repeat(2000), "quote": "y".repeat(2000) })),
+            );
+        }
+        let mut root = Span::workflow("run");
+        root.push(big);
+
+        let children: Vec<Span> = root
+            .children
+            .into_iter()
+            .flat_map(|c| bound_structure(c, Span::SPAN_BUDGET))
+            .collect();
+        let chunks = chunk_children(children, 4_500);
+
+        assert!(!chunks.is_empty(), "nothing was emitted");
+        for chunk in &chunks {
+            let bytes = serde_json::to_string(
+                &chunk.iter().map(|s| s.to_json()).collect::<Vec<_>>(),
+            )
+            .map(|s| s.len())
+            .unwrap_or(0);
+            assert!(
+                bytes <= Span::SPAN_BUDGET.max(4_500),
+                "a chunk was {bytes} bytes"
+            );
+        }
+        // Every verification survives, just no longer nested under one parent.
+        let total: usize = chunks.iter().map(|c| c.len()).sum();
+        assert!(total >= 30, "spans were dropped: only {total} survived");
+    }
+
+    #[test]
+    fn cap_str_leaves_a_marker() {
+        let out = cap_str(&"a".repeat(5000), 400);
+        assert!(out.contains("truncated"));
+        assert!(out.chars().count() < 460);
     }
 
     #[test]

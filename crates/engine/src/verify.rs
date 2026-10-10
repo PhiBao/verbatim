@@ -521,20 +521,52 @@ fn following_context(text: &str, m: &str) -> String {
     ctx.join(" ")
 }
 
-/// Finds a numeric key shared by two claims, e.g. "requests per minute".
+/// Finds a quantity that two claims genuinely disagree about.
+///
+/// Two claims conflict only when they are about the *same thing*. Sharing a unit
+/// is not enough: "Tier 1 allows 50 RPM" and "Tier 4 allows 4,000 RPM" both talk
+/// about requests per minute and are both true. Flagging that as a disagreement
+/// produces dozens of false conflicts on any page with a tier table.
+///
+/// So a conflict requires the claims to agree on every other number they state,
+/// and differ only on the shared key.
 fn shared_numeric_key(a: &str, b: &str) -> Option<String> {
-    let fa = extract_facts(a);
-    let fb = extract_facts(b);
+    let fa: Vec<Fact> = extract_facts(a)
+        .into_iter()
+        .filter(|f| f.kind == FactKind::Number)
+        .collect();
+    let fb: Vec<Fact> = extract_facts(b)
+        .into_iter()
+        .filter(|f| f.kind == FactKind::Number)
+        .collect();
+
     for x in &fa {
-        if x.kind != FactKind::Number || x.context.is_empty() {
+        if x.context.is_empty() {
             continue;
         }
         for y in &fb {
-            if y.kind != FactKind::Number || y.context.is_empty() {
+            if y.context.is_empty() {
                 continue;
             }
-            // Compare on the unit context alone, ignoring the digits.
-            if context_key(&x.context) == context_key(&y.context) {
+            if context_key(&x.context) != context_key(&y.context) {
+                continue;
+            }
+            if x.canon == y.canon {
+                continue; // same value, no disagreement
+            }
+            // Every other number the two claims state must agree, otherwise they
+            // are describing different subjects rather than contradicting.
+            let others_a: Vec<&str> = fa
+                .iter()
+                .filter(|f| f.canon != x.canon)
+                .map(|f| f.canon.as_str())
+                .collect();
+            let others_b: Vec<&str> = fb
+                .iter()
+                .filter(|f| f.canon != y.canon)
+                .map(|f| f.canon.as_str())
+                .collect();
+            if others_a == others_b {
                 return Some(x.context.clone());
             }
         }
