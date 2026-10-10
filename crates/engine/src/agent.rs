@@ -11,7 +11,8 @@
 use crate::config::Config;
 use crate::llm::{args_digest, Completion, Llm};
 use crate::model::{Artifact, Claim, Mode, NextAction, Source, Stats, Verdict};
-use crate::retrieval::{FetchedDoc, Retrieval, RetrievalMode};
+use crate::retrieval::{FetchedDoc, Retrieval, RetrievalMode, SearchHit};
+use std::collections::HashMap;
 use crate::store::{Event, Store};
 use crate::text::canonical;
 use crate::trace::{Span, Tracer};
@@ -83,12 +84,17 @@ impl Agent {
         let store = Store::open(&cfg.db_path)?;
         let corpus_dir = cfg.corpus_dir.clone();
         let retrieval_mode = cfg.retrieval_mode.clone();
+        let tavily_key = cfg.tavily_key.clone();
         Ok(Self {
             cfg,
             store,
             tracer: Tracer::from_env(),
             llm,
-            retrieval: Mutex::new(Retrieval::new(mode_of(&retrieval_mode), &corpus_dir)),
+            retrieval: Mutex::new(Retrieval::new(
+                mode_of(&retrieval_mode),
+                &corpus_dir,
+                tavily_key,
+            )),
             cancelled: std::sync::atomic::AtomicBool::new(false),
         })
     }
@@ -108,6 +114,7 @@ impl Agent {
             litellm_model: "test".into(),
             search_provider: "none".into(),
             search_api_key: None,
+            tavily_key: None,
             retrieval_mode: "corpus".into(),
             corpus_dir: "./corpus".into(),
             max_run_seconds: 60,
@@ -428,10 +435,51 @@ impl Agent {
     ) -> Result<Vec<String>> {
         let r = self.retrieval.lock().await;
 
-        let hits = if self.retrieval_mode_of() == RetrievalMode::Corpus {
+        let hits: Vec<SearchHit> = if self.retrieval_mode_of() == RetrievalMode::Corpus {
             r.search_corpus(question, 5)
+                .into_iter()
+                .filter_map(|url| r.corpus_doc(&url))
+                .collect()
+        } else if r.has_search() {
+            match r.search_tavily(question, 5).await {
+                Ok(hits) if !hits.is_empty() => hits,
+                // Live search found nothing usable. Rather than returning an
+                // empty run, fall back to the pinned corpus so the demo still
+                // proves something. The fallback is visible in the trace.
+                Ok(_) => {
+                    span.push(
+                        Span::retriever("search")
+                            .with_query(json!(question))
+                            .with_output(json!({"live_hits": 0, "fallback": "corpus"})),
+                    );
+                    r.search_corpus(question, 5)
+                        .into_iter()
+                        .filter_map(|url| r.corpus_doc(&url))
+                        .collect()
+                }
+                Err(e) => {
+                    span.push(
+                        Span::retriever("search")
+                            .with_query(json!(question))
+                            .with_output(json!({"live_error": e.to_string(), "fallback": "corpus"})),
+                    );
+                    r.search_corpus(question, 5)
+                        .into_iter()
+                        .filter_map(|url| r.corpus_doc(&url))
+                        .collect()
+                }
+            }
         } else {
-            self.search_live(question, 5).await.unwrap_or_default()
+            self.search_live(question, 5)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|url| SearchHit {
+                    url,
+                    title: None,
+                    content: None,
+                })
+                .collect()
         };
 
         let mut urls: Vec<String> = Vec::new();
@@ -439,10 +487,19 @@ impl Agent {
             span.push(
                 Span::retriever("search")
                     .with_query(json!(question))
-                    .with_documents(vec![h.clone()]),
+                    .with_documents(hits.iter().map(|x| x.url.clone()).collect()),
             );
-            urls.push(h.clone());
+            urls.push(h.url.clone());
         }
+
+        // Tavily extracts page text for us, so live retrieval does not need a
+        // second request per URL: the content it returns is the text a claim is
+        // quoted against.
+        let preloaded: std::collections::HashMap<String, SearchHit> = hits
+            .iter()
+            .filter(|h| h.content.is_some())
+            .map(|h| (canonical(&h.url).canon, h.clone()))
+            .collect();
 
         for url in &urls {
             // The idempotency check: if a previous attempt already settled this
@@ -453,7 +510,21 @@ impl Agent {
                 continue;
             }
 
-            match r.fetch(url).await {
+            let fetched = match preloaded.get(&canonical(url).canon) {
+                Some(h) => {
+                    let text = h.content.clone().unwrap_or_default();
+                    Ok(FetchedDoc {
+                        url: h.url.clone(),
+                        title: h.title.clone(),
+                        http_status: 200,
+                        bytes: text.len(),
+                        content_hash: crate::retrieval::hash(text.as_bytes()),
+                        text,
+                    })
+                }
+                None => r.fetch(url).await,
+            };
+            match fetched {
                 Ok(doc) => {
                     self.store.settle_effect(
                         run_id,

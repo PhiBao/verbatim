@@ -12,7 +12,7 @@ primary_region = "sin"
 
 [env]
   VERBATIM_BIND = "127.0.0.1:8787"
-  VERBATIM_RETRIEVAL = "corpus"
+  VERBATIM_RETRIEVAL = "live"
   NEXT_TELEMETRY_DISABLED = "1"
 
 [http_service]

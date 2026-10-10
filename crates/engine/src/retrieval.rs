@@ -83,20 +83,35 @@ impl FetchedDoc {
     }
 }
 
+/// One search hit. `content` is the page text the search provider extracted,
+/// which is what a claim gets quoted against.
+#[derive(Debug, Clone)]
+pub struct SearchHit {
+    pub url: String,
+    pub title: Option<String>,
+    pub content: Option<String>,
+}
+
 pub struct Retrieval {
     client: reqwest::Client,
     mode: RetrievalMode,
     corpus_dir: PathBuf,
     corpus: Vec<CorpusDoc>,
+    /// Tavily key, when live search is configured.
+    tavily_key: Option<String>,
 }
 
 impl Retrieval {
-    pub fn new(mode: RetrievalMode, corpus_dir: impl Into<PathBuf>) -> Self {
+    pub fn new(
+        mode: RetrievalMode,
+        corpus_dir: impl Into<PathBuf>,
+        tavily_key: Option<String>,
+    ) -> Self {
         let corpus_dir = corpus_dir.into();
         let corpus = load_corpus(&corpus_dir).unwrap_or_default();
         Self {
             client: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(20))
+                .timeout(std::time::Duration::from_secs(30))
                 .redirect(reqwest::redirect::Policy::limited(3))
                 .user_agent("verbatim-research-agent/0.1 (+neathack)")
                 .build()
@@ -104,16 +119,21 @@ impl Retrieval {
             mode,
             corpus_dir,
             corpus,
+            tavily_key,
         }
     }
 
     /// Builds a retrieval over an explicit corpus, for tests and demos.
     pub fn with_corpus(corpus: Vec<CorpusDoc>, dir: impl Into<PathBuf>) -> Self {
         Self {
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_default(),
             mode: RetrievalMode::Corpus,
             corpus,
             corpus_dir: dir.into(),
+            tavily_key: None,
         }
     }
 
@@ -201,6 +221,79 @@ impl Retrieval {
 
     /// Ranks corpus documents for a query. Used in corpus mode to stand in for
     /// a search engine, so the agent's retrieval step behaves the same way.
+    /// Tavily search. Tavily extracts page text, so live retrieval does not need
+    /// a second request per URL: the content it returns is the text a claim gets
+    /// quoted against.
+    ///
+    /// A provider outage degrades to "no hits" rather than failing the run. An
+    /// honest run that verifies nothing beats a run that crashes.
+    pub async fn search_tavily(&self, query: &str, limit: usize) -> Result<Vec<SearchHit>> {
+        let key = self
+            .tavily_key
+            .as_ref()
+            .context("no Tavily API key configured")?;
+        let body = serde_json::json!({
+            "api_key": key,
+            "query": query,
+            "max_results": limit.min(10),
+            "search_depth": "advanced",
+            "include_raw_content": true,
+        });
+        let resp = self
+            .client
+            .post("https://api.tavily.com/search")
+            .json(&body)
+            .send()
+            .await
+            .context("tavily request failed")?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            anyhow::bail!("tavily returned {status}: {}", first_line(&text));
+        }
+        let v: serde_json::Value = resp.json().await.context("parse tavily response")?;
+        Ok(v
+            .get("results")
+            .and_then(|r| r.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|r| {
+                        Some(SearchHit {
+                            url: r.get("url").and_then(|u| u.as_str())?.to_string(),
+                            title: r
+                                .get("title")
+                                .and_then(|t| t.as_str())
+                                .map(str::to_string),
+                            content: r
+                                .get("raw_content")
+                                .or_else(|| r.get("content"))
+                                .and_then(|c| c.as_str())
+                                .map(str::to_string)
+                                .filter(|c| !c.trim().is_empty()),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    /// True when live search is configured.
+    pub fn has_search(&self) -> bool {
+        self.tavily_key.is_some()
+    }
+
+    /// Looks up one corpus document by URL, for the deterministic demo path.
+    pub fn corpus_doc(&self, url: &str) -> Option<SearchHit> {
+        self.corpus
+            .iter()
+            .find(|d| same_url(&d.url, url))
+            .map(|d| SearchHit {
+                url: d.url.clone(),
+                title: d.title.clone(),
+                content: Some(d.text.clone()),
+            })
+    }
+
     pub fn search_corpus(&self, query: &str, limit: usize) -> Vec<String> {
         let terms = tokenize(query);
         if terms.is_empty() {
@@ -319,6 +412,10 @@ fn is_public_ip(ip: IpAddr) -> bool {
     }
 }
 
+fn first_line(s: &str) -> String {
+    s.lines().next().unwrap_or("").chars().take(200).collect()
+}
+
 fn same_url(a: &str, b: &str) -> bool {
     match (reqwest::Url::parse(a), reqwest::Url::parse(b)) {
         (Ok(x), Ok(y)) => {
@@ -420,7 +517,7 @@ pub fn html_to_text(html: &str) -> String {
         .join("\n")
 }
 
-fn hash(bytes: &[u8]) -> String {
+pub fn hash(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     hex::encode(h.finalize())

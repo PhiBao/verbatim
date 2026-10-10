@@ -80,7 +80,11 @@ async fn snapshot(cfg: &Config) -> anyhow::Result<()> {
         .filter(|s| !s.is_empty())
         .collect();
 
-    let mut r = Retrieval::new(engine::retrieval::RetrievalMode::Live, &cfg.corpus_dir);
+    let mut r = Retrieval::new(
+        engine::retrieval::RetrievalMode::Live,
+        &cfg.corpus_dir,
+        cfg.tavily_key.clone(),
+    );
     let mut ok = 0usize;
     for url in &urls {
         print!("{url} ... ");

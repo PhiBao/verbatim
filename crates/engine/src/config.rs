@@ -28,9 +28,11 @@ pub struct Config {
     pub litellm_api_key: Option<String>,
     pub litellm_model: String,
 
-    /// Search provider: `brave` or `none` (corpus-only).
+    /// Search provider: `tavily`, `brave` or `none` (corpus-only).
     pub search_provider: String,
     pub search_api_key: Option<String>,
+    /// Tavily key, when live search is configured.
+    pub tavily_key: Option<String>,
 
     /// Where fetched documents come from: `live` or `corpus`.
     pub retrieval_mode: String,
@@ -89,6 +91,9 @@ impl Config {
                 .unwrap_or_else(|_| crate::llm::OpenAiCompatLlm::cheapest_model().into()),
             search_provider,
             search_api_key,
+            tavily_key: std::env::var("TAVILY_API_KEY")
+                .ok()
+                .filter(|k| !k.is_empty()),
             retrieval_mode,
             corpus_dir: std::env::var("VERBATIM_CORPUS").unwrap_or_else(|_| "./corpus".into()),
             max_run_seconds: env_u64("VERBATIM_MAX_RUN_SECONDS", 600),
@@ -122,7 +127,8 @@ impl Config {
         serde_json::json!({
             "llm": self.has_llm(),
             "neatlogs": self.has_neatlogs(),
-            "search": self.search_provider != "none" && self.search_api_key.is_some(),
+            "search": self.tavily_key.is_some()
+                || (self.search_provider != "none" && self.search_api_key.is_some()),
             "retrieval": self.retrieval_mode,
             "model": self.llm_target(),
         })
