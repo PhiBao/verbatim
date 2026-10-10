@@ -1,0 +1,9 @@
+{
+  "name": "verbatim-plugins",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Plugin dependencies for the neatlogs OpenCode integration.",
+  "dependencies": {
+    "neatlogs": "^1.1.11"
+  }
+}
