@@ -87,6 +87,34 @@ const setup = async (ctx: Context) => {
     }
   }
 
+  // Entire CLI 0.11.4 shells out to `opencode export <id>` to fetch a session
+  // transcript. OpenCode v2 renamed that command to `opencode session export`,
+  // so Entire's call fails, condensation reports "transcript not found", and no
+  // checkpoint ref is written even though the commit carries the trailer.
+  //
+  // The plugin stands in for the missing command: it exports the transcript to
+  // the exact path Entire reads. Measured on opcode v2.0.26 + Entire 0.11.4 —
+  // without this, `entire checkpoint list` stays at 0 forever.
+  //
+  // It runs at turn-start as well as at the end, because a commit made during
+  // the first step of a turn would otherwise race the write. A transcript that
+  // is stale by one step is worth more than no checkpoint at all.
+  function syncTranscript(sessionID: string | undefined) {
+    if (!sessionID) return;
+    try {
+      spawnSync(
+        "sh",
+        [
+          "-c",
+          `mkdir -p .entire/tmp && opencode session export '${sessionID}' > '.entire/tmp/${sessionID}.json' 2>/dev/null`,
+        ],
+        { cwd: directory, encoding: "utf8", timeout: 20_000 },
+      );
+    } catch {
+      // Best effort: the checkpoint simply carries no transcript.
+    }
+  }
+
   function trackSession(id: string | undefined) {
     if (!id || currentSessionID === id) return;
     // A new session begins; drop the previous session's prompt so it cannot be
@@ -117,6 +145,7 @@ const setup = async (ctx: Context) => {
           case "session.execution.started": {
             trackSession(sessionID);
             if (sessionID) {
+              syncTranscript(sessionID);
               callHookSync("turn-start", {
                 session_id: sessionID,
                 prompt: pendingPrompt,
@@ -126,10 +155,18 @@ const setup = async (ctx: Context) => {
             break;
           }
 
+          case "session.step.ended": {
+            // Refresh mid-turn so a commit that happens partway through finds a
+            // transcript already on disk.
+            syncTranscript(sessionID);
+            break;
+          }
+
           case "session.execution.succeeded":
           case "session.execution.failed":
           case "session.execution.interrupted": {
             if (sessionID) {
+              syncTranscript(sessionID);
               callHookSync("turn-end", { session_id: sessionID, model: "" });
             }
             break;
@@ -149,6 +186,7 @@ const setup = async (ctx: Context) => {
   // Cleanup, which runs on shutdown — that is the correct place for session-end.
   return async () => {
     if (currentSessionID) {
+      syncTranscript(currentSessionID);
       callHookSync("session-end", { session_id: currentSessionID });
     }
   };

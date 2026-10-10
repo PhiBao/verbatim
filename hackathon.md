@@ -215,3 +215,21 @@ Two more things this pass fixed:
 **And the reason no checkpoint had ever been created:** every commit in this log
 was made with `git -c core.hooksPath=/dev/null commit`, bypassing the git hooks
 Entire installs. The hooks were present the whole time.
+
+**The checkpoint chain now completes end to end.** After the plugin fix, one
+link was still missing: Entire CLI 0.11.4 shells out to `opencode export <id>`,
+and OpenCode v2 renamed that to `opencode session export`. Entire's call failed,
+condensation reported "transcript not found", and no checkpoint ref was written
+even though commits carried a valid `Entire-Checkpoint` trailer.
+
+The plugin now stands in for the missing command, writing the transcript to the
+exact path Entire reads. Two details that only showed up under test:
+
+- it runs at **turn-start** as well as turn-end, because a commit made during the
+  first step of a turn otherwise races the write
+- `git commit --allow-empty` never produces a checkpoint — Entire reports "no
+  files modified during session, skipping checkpoint". A test using an empty
+  commit proves nothing.
+
+Verified in a scratch repo: `refs/entire/checkpoints/C7/01M4KJ33...` created,
+`entire checkpoint list` reports 1.
