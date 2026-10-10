@@ -192,7 +192,7 @@ cost per report, gross margin, Base/Growth scenarios, runway.
 
 ## Running
 
-### Prerequisites
+### Prerequisites (for local development)
 
 - Rust (stable), Node 22+, pnpm
 - A model endpoint (the hackathon's LiteLLM gateway, or AWS Bedrock)
@@ -255,6 +255,8 @@ fetched source.
 ---
 
 ## Demo
+
+**Live:** https://verbatim-neathack.fly.dev
 
 1. **Ask** a question where sources disagree.
 2. **Watch** the timeline: plan → searches → fetches → claims → verdicts.

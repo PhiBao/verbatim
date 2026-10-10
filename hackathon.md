@@ -146,7 +146,20 @@ One run end to end, verified locally and again from the built container:
   answer rather than silently deciding it.
 - 2 traces ingested, ids `87300af2...`, `98a082e2...`
 
-**Deployment (completed, not yet pushed)**
+**Deployment (live)**
+https://verbatim-neathack.fly.dev — single container, one machine in `sin`
+(Mumbai `bom` is unavailable on this Fly plan). Verified live: home 200, audit
+200, a full run returning 6 claims with **1 conflict detected**, and **2 traces
+ingested** from the deployed process (`48e33df2...`, `6812c0c3...`).
+
+Also fixed while deploying: the run API returned 131 KB, most of it the full text
+of the Anthropic pricing page, because the stored artifact carries source bodies
+for the verifier. Sources now go out as metadata only and long event-body strings
+are truncated with a marker. 131 KB → 32 KB.
+
+`bom` was the original region; it had to move to `sin` because the org is on a
+legacy Fly plan. Logged because it is the kind of thing that looks like a code
+bug and is not.
 Single container: the Rust engine binds loopback, Next proxies `/api/*` to it,
 only port 3000 exposed. Image builds at 223 MB. Verified running locally with the
 real model and real traces.
