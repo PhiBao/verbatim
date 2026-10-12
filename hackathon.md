@@ -288,3 +288,28 @@ Verified closed:
 **Every key was rotated.** The lesson worth keeping: Entire's own documentation
 says checkpoints in a public repository are public, and that warning is easy to
 read once and then stop applying.
+
+### Checkpoint policy after the exposure
+
+Entire checkpoints store the session transcript next to the commit, and this
+repository is public. Two rules follow, and the second is the one that was
+missing:
+
+1. Never paste a credential into a session in this repository.
+2. **Scan the checkpoint before pushing it.** The check is two lines:
+
+```bash
+for r in $(git for-each-ref --format='%(refname)' refs/entire/checkpoints/); do
+  git ls-tree -r --name-only "$r" | while read -r f; do
+    git cat-file -p "$r:$f" | grep -aoE 'sk-[A-Za-z0-9]{8,}|tvly-[A-Za-z0-9_-]{8,}|ziw-[A-Za-z0-9_-]{8,}|cd_[a-f0-9]{8,}' \
+      && echo "  ^ in $r :: $f"
+  done
+done
+```
+
+Silence means it is safe to push. Anything else means delete the ref and start
+the session again.
+
+The earlier mistake was not the absence of a check but applying it once — to a
+smoke-test session containing nothing but a two-word prompt — and assuming that
+covered the real ones.
