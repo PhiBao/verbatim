@@ -1,0 +1,1 @@
+"Run exactly this one shell command and nothing else: git commit -m 'Record a checkpoint scan policy after the credential exposure'"

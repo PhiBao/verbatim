@@ -1,0 +1,39 @@
+{
+  "info": {
+    "id": "ses_ecf5fa04affeSj7V79so5j3A6R",
+    "projectID": "102c914465a7bcad7dc7ce7f6a7c49179e92a577",
+    "model": {
+      "id": "space-bunny-free",
+      "providerID": "opencode",
+      "variant": "default"
+    },
+    "cost": 0,
+    "tokens": {
+      "input": 0,
+      "output": 0,
+      "reasoning": 0,
+      "cache": {
+        "read": 0,
+        "write": 0
+      }
+    },
+    "time": {
+      "created": 1791817179320,
+      "updated": 1791817180507
+    },
+    "location": {
+      "directory": "/home/kiter/neatlogs"
+    }
+  },
+  "messages": [
+    {
+      "id": "msg_130a060c4001YT55n6ae27UtnH",
+      "time": {
+        "created": 1791817180525
+      },
+      "text": "\"Run exactly this one shell command and nothing else: git commit -m 'Record a checkpoint scan policy after the credential exposure'\"",
+      "files": [],
+      "type": "user"
+    }
+  ]
+}
