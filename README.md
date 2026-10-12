@@ -249,6 +249,7 @@ fetched source.
 | | |
 |---|---|
 | **Live app** | https://verbatim-neathack.fly.dev |
+| **Entire checkpoint** | [4a20d281486d](https://entire.io/gh/PhiBao/verbatim/commit/4a20d281486dfad98041b8b70ffd5eb359fc2917) — `01M4RA0WB9WMK08NKSX8V199Q0` |
 | **Demo video** | [youtu.be/Zifq7diJUUg](https://youtu.be/Zifq7diJUUg) — 2m42s |
 | **Business model** | https://cfo.ai/s/mAotSQsQFqUlV-xU — the real cfo.ai sheet |
 | **Run with receipts** | [/ \?run=02078eb3-48a3-4aa5-94ab-6a01f9edfc22](https://verbatim-neathack.fly.dev/?run=02078eb3-48a3-4aa5-94ab-6a01f9edfc22) |
