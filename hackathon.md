@@ -271,3 +271,20 @@ checkpoint  01M4KQNDHEF4YFPRHX4E13YQ8W
 commit      938a4a461991046258f57523d69f67d624d3f76b
 link        https://entire.io/gh/PhiBao/verbatim/commit/938a4a461991046258f57523d69f67d624d3f76b
 ```
+
+### Checkpoint refs removed after a credential exposure (2026-10-12)
+
+Entire checkpoints store the **session transcript** next to the commit. Ours were
+pushed to the public remote, and every session in them contained API keys that
+had been pasted into the conversation. Deleting the refs was not enough —
+`raw.githubusercontent.com` kept serving the objects by SHA — so the repository
+was deleted and recreated.
+
+Verified closed:
+- `raw.githubusercontent.com/.../85c0f20.../1/full.jsonl` -> 404, previously 200
+- every file on `main` scans clean for all four keys; zero commits introduce one
+- `.env` was gitignored throughout, so nothing leaked through tracked files
+
+**Every key was rotated.** The lesson worth keeping: Entire's own documentation
+says checkpoints in a public repository are public, and that warning is easy to
+read once and then stop applying.
